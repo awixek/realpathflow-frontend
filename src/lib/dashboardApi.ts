@@ -90,7 +90,8 @@ async function postJson(path: string, body?: unknown): Promise<SessionResponse> 
 }
 
 export function startSession(subtaskId: string) {
-  return postJson('/api/v1/execution/sessions', { subtask_id: subtaskId })
+  const idempotencyKey = crypto.randomUUID()
+  return postJson('/api/v1/execution/sessions', { subtask_id: subtaskId, idempotency_key: idempotencyKey })
 }
 
 export function pauseSession(sessionId: string) {
