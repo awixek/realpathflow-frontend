@@ -38,6 +38,7 @@ export interface DashboardResponse {
 }
 
 export interface DashboardView {
+  roadmapId: string | null
   roadmapTitle: string | null
   roadmapCreatedAt: string | null
   dayPercent: number
@@ -70,6 +71,7 @@ export async function fetchDashboard(): Promise<DashboardView> {
   const data: DashboardResponse = await res.json()
 
   return {
+    roadmapId: data.roadmap?.id ?? null,
     roadmapTitle: data.roadmap?.title ?? null,
     roadmapCreatedAt: data.roadmap?.created_at ?? null,
     dayPercent: data.day_percent,

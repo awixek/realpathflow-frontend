@@ -1,7 +1,10 @@
-import { AnimatePresence } from 'framer-motion'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import ActiveTaskBar from '../components/ActiveTaskBar'
 import DayProgressBox from '../components/DayProgressBox'
+import DeleteRoadmapModal from '../components/DeleteRoadmapModal'
+import LoadingState from '../components/LoadingState'
 import NavBar from '../components/NavBar'
 import TaskBox from '../components/TaskBox'
 import {
@@ -13,7 +16,9 @@ import {
   resumeSession,
   startSession
 } from '../lib/dashboardApi'
+import { closeProgressNotification, onNotificationAction, showProgressNotification } from '../lib/notifications'
 import { playSubtaskChime } from '../lib/sound'
+import { useAuth } from '../lib/useAuth'
 
 export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<DashboardView | null>(null)
@@ -21,6 +26,8 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(Date.now())
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const { session } = useAuth()
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -45,12 +52,29 @@ export default function DashboardPage() {
     return () => clearInterval(id)
   }, [])
 
+  const handleTogglePauseRef = useRef<() => void>(() => {})
+  const handleCompleteSubtaskRef = useRef<() => void>(() => {})
+
+  // Notification action buttons call whatever the latest handler is,
+  // without re-subscribing to the service worker on every render.
+  useEffect(() => {
+    return onNotificationAction((action) => {
+      if (action === 'toggle-pause') handleTogglePauseRef.current()
+      if (action === 'complete-step') handleCompleteSubtaskRef.current()
+    })
+  }, [])
+
   const activeSession = dashboard?.activeSession ?? null
   const activeTask = useMemo(
     () => dashboard?.tasks.find((t) => t.subtasks.some((s) => s.id === activeSession?.subtask_id)) ?? null,
     [dashboard, activeSession]
   )
   const activeSubtask = activeTask?.subtasks.find((s) => s.id === activeSession?.subtask_id) ?? null
+  const livePercent = activeTask
+    ? Math.round(
+        (activeTask.subtasks.filter((s) => s.status === 'done').length / activeTask.subtasks.length) * 100
+      )
+    : 0
 
   async function handleStart(taskId: string) {
     const task = dashboard?.tasks.find((t) => t.id === taskId)
@@ -99,11 +123,29 @@ export default function DashboardPage() {
     }
   }
 
+  handleTogglePauseRef.current = handleTogglePause
+  handleCompleteSubtaskRef.current = handleCompleteSubtask
+
+  // Keep the OS/browser notification in sync with the active task so
+  // Pause/Resume and Complete step work from the notification itself.
+  useEffect(() => {
+    if (!activeTask || !activeSubtask || !activeSession) {
+      closeProgressNotification()
+      return
+    }
+    const isPaused = activeSession.status !== 'ACTIVE'
+    showProgressNotification(
+      activeTask.title,
+      `${activeSubtask.title} · ${livePercent}% of this task`,
+      isPaused
+    )
+  }, [activeTask, activeSubtask, activeSession, livePercent])
+
   if (loading) {
     return (
       <div className="min-h-screen">
         <NavBar />
-        <p className="px-6 py-10 text-sm text-mute">Loading your roadmap…</p>
+        <LoadingState label="Loading your roadmap…" />
       </div>
     )
   }
@@ -129,21 +171,25 @@ export default function DashboardPage() {
     return (
       <div className="min-h-screen">
         <NavBar />
-        <div className="mx-auto max-w-lg px-6 py-16 text-center">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="mx-auto max-w-lg px-6 py-24 text-center"
+        >
+          <div className="mx-auto mb-6 h-14 w-14 rounded-md border-2 border-black bg-ink-panel" />
           <h1 className="font-display text-2xl text-paper">No active roadmap yet</h1>
-          <p className="mt-2 text-sm text-mute">
-            Roadmap creation is coming in a future update — check back soon.
-          </p>
-        </div>
+          <p className="mt-2 text-sm text-mute">Let AI help you build one, in a couple of minutes.</p>
+          <Link
+            to="/create-roadmap"
+            className="mt-6 inline-block rounded-md bg-flow px-4 py-2 text-sm font-medium text-ink hover:bg-flow/90"
+          >
+            Create your roadmap
+          </Link>
+        </motion.div>
       </div>
     )
   }
-
-  const livePercent = activeTask
-    ? Math.round(
-        (activeTask.subtasks.filter((s) => s.status === 'done').length / activeTask.subtasks.length) * 100
-      )
-    : 0
 
   return (
     <div className="min-h-screen">
@@ -164,19 +210,47 @@ export default function DashboardPage() {
 
       <div className="mx-auto max-w-5xl px-6 py-10">
         <div className="mb-8 flex items-start justify-between">
-          <div>
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
             <h1 className="font-display text-2xl text-paper">{dashboard.roadmapTitle ?? "Today's roadmap"}</h1>
             <p className="mt-1 text-sm text-mute">Work through each task in order — one step at a time.</p>
-          </div>
+            {dashboard.roadmapId && (
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="mt-2 text-xs text-mute hover:text-red-400"
+              >
+                Delete this roadmap
+              </button>
+            )}
+          </motion.div>
           <DayProgressBox percent={dashboard.dayPercent} />
         </div>
 
         <div className={`grid gap-5 sm:grid-cols-2 lg:grid-cols-3 ${busy ? 'pointer-events-none opacity-70' : ''}`}>
-          {dashboard.tasks.map((task) => (
-            <TaskBox key={task.id} task={task} isActive={task.id === activeTask?.id} onStart={handleStart} />
+          {dashboard.tasks.map((task, i) => (
+            <motion.div
+              key={task.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: i * 0.06 }}
+            >
+              <TaskBox task={task} isActive={task.id === activeTask?.id} onStart={handleStart} />
+            </motion.div>
           ))}
         </div>
       </div>
+
+      {showDeleteModal && dashboard.roadmapId && session?.user.email && (
+        <DeleteRoadmapModal
+          roadmapId={dashboard.roadmapId}
+          roadmapTitle={dashboard.roadmapTitle ?? 'this roadmap'}
+          email={session.user.email}
+          onClose={() => setShowDeleteModal(false)}
+          onDeleted={() => {
+            setShowDeleteModal(false)
+            loadDashboard()
+          }}
+        />
+      )}
     </div>
   )
 }

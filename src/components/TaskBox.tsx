@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import { useState } from 'react'
+import { requestNotificationPermission } from '../lib/notifications'
 import { MainTask } from '../types'
 
 function taskProgress(task: MainTask): number {
@@ -25,6 +26,9 @@ export default function TaskBox({
   const [confirming, setConfirming] = useState(false)
 
   function handleStartClick() {
+    // Fire on the click itself (a real user gesture) - browsers ignore
+    // permission prompts triggered from a deferred setTimeout callback.
+    requestNotificationPermission()
     setConfirming(true)
     // Brief "Ready to start" confirmation before the top control bar takes over.
     setTimeout(() => {
@@ -36,8 +40,10 @@ export default function TaskBox({
   return (
     <motion.div
       layout
-      className={`relative flex flex-col gap-3 overflow-hidden rounded-lg border p-4 ${
-        isActive ? 'border-flow' : 'border-black'
+      whileHover={!isLocked ? { y: -2, borderColor: '#3ECF7E' } : undefined}
+      transition={{ layout: { duration: 0.3 } }}
+      className={`relative flex flex-col gap-3 overflow-hidden rounded-lg border p-4 transition-shadow ${
+        isActive ? 'border-flow shadow-[0_0_0_1px_rgba(62,207,126,0.3)]' : 'border-black'
       } ${isLocked ? 'opacity-50' : ''}`}
     >
       {/* full-box fill once done */}
@@ -85,14 +91,17 @@ export default function TaskBox({
 
       {task.status === 'ready' &&
         (confirming ? (
-          <p className="relative text-sm text-flow">Ready to start…</p>
+          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="relative text-sm text-flow">
+            Ready to start…
+          </motion.p>
         ) : (
-          <button
+          <motion.button
+            whileTap={{ scale: 0.96 }}
             onClick={handleStartClick}
             className="relative self-start rounded-md border border-flow px-3 py-1.5 text-sm text-flow transition-colors hover:bg-flow hover:text-ink"
           >
             Start
-          </button>
+          </motion.button>
         ))}
 
       {isLocked && <p className="relative text-xs text-mute">Finish the previous task to unlock this one.</p>}
