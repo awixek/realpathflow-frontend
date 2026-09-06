@@ -32,3 +32,11 @@ Nothing anymore — both `DashboardPage` and `ProfilePage` call the real Railway
 ## Deploying
 
 Connect this repo to Vercel. Set the same three variables from `.env.example` as Vercel project environment variables (Settings → Environment Variables), framework preset: Vite.
+
+
+## P19 deployment note
+
+The frontend expects `VITE_API_BASE_URL` to point at the Railway backend and sends the Supabase access token as a Bearer token. If the browser reports `Failed to fetch`, check the Railway `ALLOWED_ORIGINS` value first; it must exactly match the deployed Vercel origin.
+
+
+Session starts now send a client-generated idempotency key so a retried request can safely return the original server session.

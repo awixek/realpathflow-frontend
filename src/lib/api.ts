@@ -13,5 +13,12 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
     headers.set('Authorization', `Bearer ${session.access_token}`)
   }
 
-  return fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+  try {
+    return await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+  } catch {
+    throw new Error(
+      `Network/CORS error contacting the RealPathFlow API at ${API_BASE_URL}. ` +
+        'Check VITE_API_BASE_URL and the Railway ALLOWED_ORIGINS value.'
+    )
+  }
 }
