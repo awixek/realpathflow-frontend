@@ -1,5 +1,7 @@
+import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import Heatmap from '../components/Heatmap'
+import LoadingState from '../components/LoadingState'
 import NavBar from '../components/NavBar'
 import { fetchDashboard } from '../lib/dashboardApi'
 import { buildHeatmapWeeks, HeatmapCell } from '../lib/heatmap'
@@ -37,25 +39,33 @@ export default function ProfilePage() {
     <div className="min-h-screen">
       <NavBar />
 
-      <div className="mx-auto max-w-4xl px-6 py-10">
-        <h1 className="font-display text-2xl text-paper">{session?.user.email}</h1>
+      {weeks === null && !error && <LoadingState label="Loading your history…" />}
 
-        {weeks === null && !error && <p className="mt-4 text-sm text-mute">Loading your history…</p>}
-        {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
+      {(weeks !== null || error) && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="mx-auto max-w-4xl px-6 py-10"
+        >
+          <h1 className="font-display text-2xl text-paper">{session?.user.email}</h1>
 
-        {weeks && weeks.length === 0 && (
-          <p className="mt-4 text-sm text-mute">No roadmap history yet — start a task to begin your streak.</p>
-        )}
+          {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
 
-        {weeks && weeks.length > 0 && (
-          <>
-            <p className="mt-1 text-sm text-mute">{Math.round(totalHours)} hours logged so far</p>
-            <div className="mt-8 rounded-lg border border-ink-border p-5">
-              <Heatmap weeks={weeks} />
-            </div>
-          </>
-        )}
-      </div>
+          {weeks && weeks.length === 0 && (
+            <p className="mt-4 text-sm text-mute">No roadmap history yet — start a task to begin your streak.</p>
+          )}
+
+          {weeks && weeks.length > 0 && (
+            <>
+              <p className="mt-1 text-sm text-mute">{Math.round(totalHours)} hours logged so far</p>
+              <div className="mt-8 rounded-lg border border-ink-border p-5">
+                <Heatmap weeks={weeks} />
+              </div>
+            </>
+          )}
+        </motion.div>
+      )}
     </div>
   )
 }

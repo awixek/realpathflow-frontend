@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion'
 import { useState } from 'react'
 import { HeatmapCell } from '../lib/heatmap'
 
@@ -29,8 +30,10 @@ export default function Heatmap({ weeks }: { weeks: HeatmapCell[][] }) {
                 return <div key={cell.date} className="h-3.5 w-3.5" />
               }
               return (
-                <button
+                <motion.button
                   key={cell.date}
+                  whileHover={{ scale: 1.35 }}
+                  transition={{ duration: 0.15 }}
                   onMouseEnter={() => setActiveCell(cell)}
                   onFocus={() => setActiveCell(cell)}
                   onClick={() => setActiveCell(cell)}
@@ -41,14 +44,27 @@ export default function Heatmap({ weeks }: { weeks: HeatmapCell[][] }) {
                     className="absolute bottom-0 left-0 right-0 bg-flow"
                     style={{ height: `${cell.completionPct}%` }}
                   />
-                </button>
+                </motion.button>
               )
             })}
           </div>
         ))}
       </div>
 
-      <p className="h-4 text-xs text-mute">{activeCell ? formatLabel(activeCell) : 'Hover a day to see its total.'}</p>
+      <div className="flex h-5 items-center">
+        {activeCell ? (
+          <motion.p
+            key={activeCell.date}
+            initial={{ opacity: 0, y: -2 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-md bg-ink-panel px-2 py-1 text-xs text-paper"
+          >
+            {formatLabel(activeCell)}
+          </motion.p>
+        ) : (
+          <p className="text-xs text-mute">Hover a day to see its total.</p>
+        )}
+      </div>
     </div>
   )
 }

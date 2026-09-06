@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
+import CreateRoadmapPage from './pages/CreateRoadmapPage'
 import DashboardPage from './pages/DashboardPage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
@@ -22,6 +23,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/create-roadmap"
+          element={
+            <ProtectedRoute>
+              <CreateRoadmapPage />
             </ProtectedRoute>
           }
         />

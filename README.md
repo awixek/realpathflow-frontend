@@ -16,11 +16,14 @@ npm run dev
 - `src/pages/DashboardPage.tsx` — the roadmap screen: parallel task boxes with one fill-line per task, a black-bordered liquid box for the day's overall %, and a sticky top bar with Start/Pause + live % while a task is active
 - `src/pages/ProfilePage.tsx` — GitHub-style streak heatmap, liquid fill per day instead of color density
 - `src/components/` — `TaskBox`, `ActiveTaskBar`, `DayProgressBox`, `Heatmap`, `NavBar`, `LiquidVessel`, plus `ProtectedRoute`/`PublicOnlyRoute` route guards
-- `src/lib/mockData.ts` — placeholder roadmap/task/history data (see TODOs — swap for real backend calls once those endpoints exist)
 - `src/lib/sound.ts` — the subtask-complete chime, generated with the Web Audio API (no audio file needed)
 - `src/lib/supabase.ts` — Supabase client (auth only)
 - `src/lib/api.ts` — fetch wrapper that attaches the Supabase session token when calling the backend
-- `src/lib/useAuth.ts` — session hook used for routing and to show the signed-in user's email
+- `src/pages/CreateRoadmapPage.tsx` — AI roadmap creation wizard (goal → clarifying questions → review & save)
+- `src/components/DeleteRoadmapModal.tsx` — deletes the active roadmap, gated behind an email OTP (Supabase `signInWithOtp` + `verifyOtp`)
+- `src/lib/aiApi.ts` — calls `/api/v1/ai/questions` and `/api/v1/ai/compile`
+- `src/lib/roadmapApi.ts` — turns a compiled AI proposal into real saved+activated roadmap rows (create roadmap → tasks → subtasks → version → activate), and roadmap deletion
+- `src/lib/notifications.ts` + `public/service-worker.js` — active-task notification with working Pause/Resume and Complete-step buttons, shown while any tab of the app is open (even backgrounded). Requires the person to grant notification permission (asked at the moment they tap Start, since browsers require a real click for the permission prompt) and works best once the site is installed via "Add to Home Screen" (`public/manifest.webmanifest`). This can't show/update while the browser itself is fully closed — that needs real Web Push infrastructure, which is a separate, bigger piece of work if it's ever wanted.
 
 ## Still using mock data
 
