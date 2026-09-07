@@ -3,7 +3,7 @@ import { FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import NavBar from '../components/NavBar'
 import { AIQuestion, CompiledProposal, compileRoadmapProposal, fetchDiscoveryQuestions } from '../lib/aiApi'
-import { saveAndActivateProposal } from '../lib/roadmapApi'
+import { publishRoadmap, RoadmapPublishException } from '../lib/roadmapApi'
 
 type Step = 'goal' | 'questions' | 'review'
 
@@ -16,6 +16,10 @@ export default function CreateRoadmapPage() {
   const [proposal, setProposal] = useState<CompiledProposal | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [publishStage, setPublishStage] = useState<string | null>(null)
+  const [publishIdempotencyKey, setPublishIdempotencyKey] = useState<string | null>(null)
+  const [startMode, setStartMode] = useState<'immediate' | 'tomorrow'>('immediate')
+  const [deadline, setDeadline] = useState('')
 
   async function handleGoalSubmit(e: FormEvent) {
     e.preventDefault()
@@ -39,6 +43,8 @@ export default function CreateRoadmapPage() {
     try {
       const result = await compileRoadmapProposal(requirements, answers)
       setProposal(result)
+      setPublishIdempotencyKey(crypto.randomUUID())
+      setPublishStage(null)
       setStep('review')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not generate a roadmap. Try again.')
@@ -48,14 +54,26 @@ export default function CreateRoadmapPage() {
   }
 
   async function handleConfirm() {
-    if (!proposal) return
+    if (!proposal || loading) return
+    const key = publishIdempotencyKey ?? crypto.randomUUID()
+    if (!publishIdempotencyKey) setPublishIdempotencyKey(key)
     setLoading(true)
     setError(null)
+    setPublishStage('VALIDATING')
     try {
-      await saveAndActivateProposal(proposal)
+      setPublishStage('SAVING')
+      await publishRoadmap(proposal, key, { startMode, deadline })
+      // Saving and activation are one atomic server operation. We deliberately
+      // do not pretend that the browser can observe an internal DB sub-stage.
+      setPublishStage('READY')
       navigate('/')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save this roadmap. Try again.')
+      setPublishStage(null)
+      if (err instanceof RoadmapPublishException) {
+        setError(`${err.message}${err.requestId ? ` (Request ${err.requestId})` : ''}`)
+      } else {
+        setError(err instanceof Error ? err.message : 'Could not save this roadmap. Try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -136,6 +154,26 @@ export default function CreateRoadmapPage() {
             <p className="mt-1 text-sm text-mute">{proposal.description}</p>
             <p className="mt-1 text-xs text-mute">{proposal.total_planned_hours} hours planned total</p>
 
+            {proposal.metadata?.research && proposal.metadata.research.status !== 'not_needed' && (
+              <div className="mt-4 rounded-lg border border-ink-border bg-ink-panel p-4">
+                <h2 className="text-sm font-medium text-paper">Web research</h2>
+                <p className="mt-1 text-xs text-mute">
+                  {proposal.metadata.research.status === 'success'
+                    ? `Used ${proposal.metadata.research.sources.length} research source${proposal.metadata.research.sources.length === 1 ? '' : 's'}.`
+                    : proposal.metadata.research.reason ?? 'Research was unavailable.'}
+                </p>
+                {proposal.metadata.research.sources.length > 0 && (
+                  <div className="mt-2 flex flex-col gap-1">
+                    {proposal.metadata.research.sources.slice(0, 5).map((source) => (
+                      <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="truncate text-xs text-flow hover:underline">
+                        {source.authoritative ? '✓ ' : ''}{source.title}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="mt-6 flex flex-col gap-4">
               {proposal.tasks.map((task) => (
                 <div key={task.order_index} className="rounded-lg border border-black p-4">
@@ -154,11 +192,35 @@ export default function CreateRoadmapPage() {
               ))}
             </div>
 
+            <div className="mt-6 rounded-lg border border-ink-border bg-ink-panel p-4">
+              <h2 className="text-sm font-medium text-paper">Execution start</h2>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1 text-xs text-mute">
+                  Start
+                  <select value={startMode} onChange={(e) => setStartMode(e.target.value as 'immediate' | 'tomorrow')} className="rounded-md border border-ink-border bg-ink-panel px-3 py-2 text-sm text-paper">
+                    <option value="immediate">Start today</option>
+                    <option value="tomorrow">Start tomorrow</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-mute">
+                  Deadline (optional)
+                  <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} className="rounded-md border border-ink-border bg-ink-panel px-3 py-2 text-sm text-paper" />
+                </label>
+              </div>
+            </div>
+
+            {publishStage && (
+              <div className="mt-4 rounded-md border border-ink-border bg-ink-panel p-3 text-sm text-paper">
+                {publishStage === 'VALIDATING' && 'Validating roadmap…'}
+                {publishStage === 'SAVING' && 'Saving roadmap…'}
+                                {publishStage === 'READY' && 'Roadmap ready'}
+              </div>
+            )}
             {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
 
             <div className="mt-6 flex gap-3">
               <button
-                onClick={() => setStep('goal')}
+                onClick={() => { setStep('goal'); setProposal(null); setPublishIdempotencyKey(null); setPublishStage(null); setError(null) }}
                 className="rounded-md border border-ink-border px-4 py-2 text-sm text-paper hover:border-flow"
               >
                 Start over
@@ -168,7 +230,7 @@ export default function CreateRoadmapPage() {
                 disabled={loading}
                 className="rounded-md bg-flow px-4 py-2 text-sm font-medium text-ink hover:bg-flow/90 disabled:opacity-60"
               >
-                {loading ? 'Saving…' : 'Save & start'}
+                {loading ? (publishStage === 'VALIDATING' ? 'Validating…' : publishStage === 'SAVING' ? 'Saving & activating…' : 'Save & start') : 'Save & start'}
               </button>
             </div>
           </motion.div>

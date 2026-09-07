@@ -34,6 +34,18 @@ self.addEventListener('message', (event) => {
     })
   }
 
+  if (msg.type === 'SHOW_COMPLETION_NOTIFICATION') {
+    const { title, body } = msg.payload
+    self.registration.showNotification(title, {
+      body,
+      tag: 'realpathflow-task-complete',
+      renotify: true,
+      silent: false,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png'
+    })
+  }
+
   if (msg.type === 'CLOSE_PROGRESS_NOTIFICATION') {
     self.registration.getNotifications({ tag: TAG }).then((list) => list.forEach((n) => n.close()))
   }
@@ -53,7 +65,7 @@ self.addEventListener('notificationclick', (event) => {
       if (clients.length > 0) {
         return clients[0].focus()
       }
-      return self.clients.openWindow('/')
+      return self.clients.openWindow('/?notificationAction=' + encodeURIComponent(action || 'open'))
     })
   )
 })

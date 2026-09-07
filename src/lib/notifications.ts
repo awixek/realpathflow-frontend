@@ -26,6 +26,12 @@ export async function showProgressNotification(title: string, body: string, isPa
   registration?.active?.postMessage({ type: 'SHOW_PROGRESS_NOTIFICATION', payload: { title, body, isPaused } })
 }
 
+export async function showTaskCompletionNotification(title: string, body: string) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return
+  const registration = await registerServiceWorker()
+  registration?.active?.postMessage({ type: "SHOW_COMPLETION_NOTIFICATION", payload: { title, body } })
+}
+
 export async function closeProgressNotification() {
   const registration = await registerServiceWorker()
   registration?.active?.postMessage({ type: 'CLOSE_PROGRESS_NOTIFICATION' })

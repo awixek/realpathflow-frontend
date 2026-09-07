@@ -5,6 +5,7 @@ import CreateRoadmapPage from './pages/CreateRoadmapPage'
 import DashboardPage from './pages/DashboardPage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
+import RoadmapEditPage from './pages/RoadmapEditPage'
 
 export default function App() {
   return (
@@ -31,6 +32,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <CreateRoadmapPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/roadmaps/:roadmapId/edit"
+          element={
+            <ProtectedRoute>
+              <RoadmapEditPage />
             </ProtectedRoute>
           }
         />
