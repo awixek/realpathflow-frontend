@@ -15,10 +15,26 @@ export interface CompiledSubtask {
 }
 
 export interface CompiledTask {
+  task_id?: string
   title: string
   order_index: number
   planned_hours: number
   subtasks: CompiledSubtask[]
+}
+
+export interface ResearchSource {
+  title: string
+  url: string
+  content: string
+  score?: number
+  authoritative?: boolean
+}
+
+export interface ResearchSummary {
+  status: 'not_needed' | 'success' | 'failed' | 'unavailable'
+  required: boolean
+  reason?: string
+  sources: ResearchSource[]
 }
 
 export interface CompiledProposal {
@@ -26,7 +42,7 @@ export interface CompiledProposal {
   description: string
   tasks: CompiledTask[]
   total_planned_hours: number
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown> & { research?: ResearchSummary }
 }
 
 async function postJson<T>(path: string, body: unknown): Promise<T> {

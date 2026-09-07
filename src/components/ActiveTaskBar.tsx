@@ -1,18 +1,19 @@
 import { motion } from 'framer-motion'
 import { MainTask } from '../types'
 
-function formatElapsed(seconds: number) {
-  const m = Math.floor(seconds / 60)
-    .toString()
-    .padStart(2, '0')
-  const s = (seconds % 60).toString().padStart(2, '0')
-  return `${m}:${s}`
+function formatDuration(seconds: number) {
+  const safe = Math.max(0, Math.floor(seconds))
+  const h = Math.floor(safe / 3600).toString().padStart(2, '0')
+  const m = Math.floor((safe % 3600) / 60).toString().padStart(2, '0')
+  const s = (safe % 60).toString().padStart(2, '0')
+  return `${h}:${m}:${s}`
 }
 
 export default function ActiveTaskBar({
   task,
   isPaused,
   elapsedSeconds,
+  targetSeconds,
   livePercent,
   onTogglePause,
   onCompleteSubtask
@@ -20,6 +21,7 @@ export default function ActiveTaskBar({
   task: MainTask
   isPaused: boolean
   elapsedSeconds: number
+  targetSeconds?: number | null
   livePercent: number
   onTogglePause: () => void
   onCompleteSubtask: () => void
@@ -39,7 +41,7 @@ export default function ActiveTaskBar({
       </div>
 
       <div className="flex items-center gap-4">
-        <span className="font-mono text-sm text-mute">{formatElapsed(elapsedSeconds)}</span>
+        <span className="font-mono text-sm text-mute">{targetSeconds != null ? `${formatDuration(Math.max(0, targetSeconds - elapsedSeconds))} remaining` : formatDuration(elapsedSeconds)}</span>
         <span className="text-sm text-flow">{livePercent}%</span>
 
         <button
