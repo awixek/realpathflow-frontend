@@ -34,7 +34,7 @@ export default function NavBar() {
           RealPathFlow
         </motion.span>
         <NavItem to="/" end>
-          Roadmap
+          Today
         </NavItem>
         <NavItem to="/profile">Profile</NavItem>
       </div>
