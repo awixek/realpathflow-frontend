@@ -1,42 +1,51 @@
-# RealPathFlow — Frontend
+# RealPathFlow — Frontend (v3)
 
-Vite + React + TypeScript + Tailwind + Framer Motion. Talks to Supabase directly for auth, and to the [RealPathFlow backend](https://realpathflow-production.up.railway.app) for everything else.
+Vite + React + TypeScript + Tailwind + Framer Motion. Talks to Supabase
+directly for auth, and to the RealPathFlow backend for everything else.
+
+This is v3 of the frontend, rebuilt to match the v3 backend: a simple
+parallel-task tracker instead of the old AI-roadmap/execution engine.
 
 ## Local setup
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in your Supabase URL/anon key
+cp .env.example .env.local   # fill in your Supabase URL/anon key + API base URL
 npm run dev
 ```
 
-## What's built so far
+## What's here
 
-- `src/pages/LoginPage.tsx` — sign in / sign up (email+password and Google), animated liquid-vessel hero
-- `src/pages/DashboardPage.tsx` — the roadmap screen: parallel task boxes with one fill-line per task, a black-bordered liquid box for the day's overall %, and a sticky top bar with Start/Pause + live % while a task is active
-- `src/pages/ProfilePage.tsx` — GitHub-style streak heatmap, liquid fill per day instead of color density
-- `src/components/` — `TaskBox`, `ActiveTaskBar`, `DayProgressBox`, `Heatmap`, `NavBar`, `LiquidVessel`, plus `ProtectedRoute`/`PublicOnlyRoute` route guards
-- `src/lib/sound.ts` — the subtask-complete chime, generated with the Web Audio API (no audio file needed)
-- `src/lib/supabase.ts` — Supabase client (auth only)
-- `src/lib/api.ts` — fetch wrapper that attaches the Supabase session token when calling the backend
-- `src/pages/CreateRoadmapPage.tsx` — AI roadmap creation wizard (goal → clarifying questions → review & save)
-- `src/components/DeleteRoadmapModal.tsx` — deletes the active roadmap, gated behind an email OTP (Supabase `signInWithOtp` + `verifyOtp`)
-- `src/lib/aiApi.ts` — calls `/api/v1/ai/questions` and `/api/v1/ai/compile`
-- `src/lib/roadmapApi.ts` — turns a compiled AI proposal into real saved+activated roadmap rows (create roadmap → tasks → subtasks → version → activate), and roadmap deletion
-- `src/lib/notifications.ts` + `public/service-worker.js` — active-task notification with working Pause/Resume and Complete-step buttons, shown while any tab of the app is open (even backgrounded). Requires the person to grant notification permission (asked at the moment they tap Start, since browsers require a real click for the permission prompt) and works best once the site is installed via "Add to Home Screen" (`public/manifest.webmanifest`). This can't show/update while the browser itself is fully closed — that needs real Web Push infrastructure, which is a separate, bigger piece of work if it's ever wanted.
+- `src/pages/LoginPage.tsx` — sign in / sign up (email+password and Google), unchanged from v2
+- `src/pages/DashboardPage.tsx` ("Today") — today's required-vs-logged progress box, a sticky timer bar while a
+  session is running, and cards for every ongoing task with Start/Pause/Resume/Stop
+- `src/pages/ProfilePage.tsx` — total hours of progression, and Ongoing/Upcoming/Completed task lists with a
+  public/private toggle and delete
+- `src/components/AddTaskModal.tsx` — the "add task" form: name, subject, start/end date, daily time, and an
+  optional frequency picker (Weekly weekday exclusions, Monthly day-of-month exclusions, or Manual calendar-picked
+  active dates)
+- `src/components/TaskCard.tsx` — one task's status, dates, daily target, logged total, frequency summary, and
+  timer controls
+- `src/components/SessionBar.tsx` — sticky top bar for the one timer that can be running at a time
+- `src/components/DayProgressBox.tsx`, `LiquidVessel.tsx`, `NavBar.tsx`, `LoadingState.tsx`,
+  `ProtectedRoute`/`PublicOnlyRoute` — carried over from v2 unchanged
+- `src/lib/tasksApi.ts` — CRUD for tasks + start/pause/resume/complete/active-session calls
+- `src/lib/profileApi.ts` — `/api/v1/daily` and `/api/v1/profile`
+- `src/lib/time.ts` — duration/date formatting shared by the components above
+- `src/lib/supabase.ts`, `useAuth.ts`, `api.ts` — unchanged auth/session plumbing
+- `src/lib/notifications.ts` + `public/service-worker.js` — unchanged: shows a notification while a session is
+  running, with working Pause/Resume from the notification itself
 
-## Still using mock data
+## Removed from v2
 
-Nothing anymore — both `DashboardPage` and `ProfilePage` call the real Railway backend (`src/lib/dashboardApi.ts`, `src/lib/historyApi.ts`). The one thing to know: the profile heatmap needs a `GET /api/v1/history/days` endpoint and a `created_at` column on the roadmap response, both added on the backend alongside this change — make sure the backend you're pointing at includes those (P16 checkpoint in its `docs/PROJECT_STATUS.md`).
+`CreateRoadmapPage`, `RoadmapEditPage`, `TaskBox`, `ActiveTaskBar`, `Heatmap`, `DeleteRoadmapModal`, and
+`lib/aiApi.ts` / `dashboardApi.ts` / `historyApi.ts` / `preferencesApi.ts` / `roadmapApi.ts` / `heatmap.ts` — all
+of these talked to backend endpoints that no longer exist. The profile heatmap in particular needs a
+day-by-day history endpoint the v3 backend doesn't have yet; it can come back later as a `GET
+/api/v1/daily-history` addition if it's wanted.
 
 ## Deploying
 
-Connect this repo to Vercel. Set the same three variables from `.env.example` as Vercel project environment variables (Settings → Environment Variables), framework preset: Vite.
-
-
-## P19 deployment note
-
-The frontend expects `VITE_API_BASE_URL` to point at the Railway backend and sends the Supabase access token as a Bearer token. If the browser reports `Failed to fetch`, check the Railway `ALLOWED_ORIGINS` value first; it must exactly match the deployed Vercel origin.
-
-
-Session starts now send a client-generated idempotency key so a retried request can safely return the original server session.
+Connect this repo to Vercel. Set the three variables from `.env.example` as Vercel project environment
+variables (Settings → Environment Variables), framework preset: Vite. Make sure the backend's
+`ALLOWED_ORIGINS` includes the deployed Vercel origin exactly.
