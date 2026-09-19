@@ -1,346 +1,248 @@
-import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
-import ActiveTaskBar from '../components/ActiveTaskBar'
+import { AnimatePresence, motion } from 'framer-motion'
+import AddTaskModal from '../components/AddTaskModal'
 import DayProgressBox from '../components/DayProgressBox'
-import DeleteRoadmapModal from '../components/DeleteRoadmapModal'
 import LoadingState from '../components/LoadingState'
 import NavBar from '../components/NavBar'
-import TaskBox from '../components/TaskBox'
+import SessionBar from '../components/SessionBar'
+import TaskCard from '../components/TaskCard'
+import { formatHoursMinutes } from '../lib/time'
 import {
-  DashboardView,
-  computeElapsedSeconds,
   completeSession,
-  fetchDashboard,
+  createTask,
+  deleteTask,
+  getActiveSession,
+  listTasks,
   pauseSession,
   resumeSession,
-  startSession
-} from '../lib/dashboardApi'
-import { closeProgressNotification, onNotificationAction, showProgressNotification, showTaskCompletionNotification } from '../lib/notifications'
+  startSession,
+  TaskDraft
+} from '../lib/tasksApi'
+import { getDailyProgress } from '../lib/profileApi'
+import { DailyProgress, Task, TaskSession } from '../types'
 import { playSubtaskChime } from '../lib/sound'
-import { useAuth } from '../lib/useAuth'
+import { requestNotificationPermission, showTaskCompletionNotification } from '../lib/notifications'
 
 export default function DashboardPage() {
-  const [dashboard, setDashboard] = useState<DashboardView | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [tasks, setTasks] = useState<Task[] | null>(null)
+  const [daily, setDaily] = useState<DailyProgress | null>(null)
+  const [activeSession, setActiveSession] = useState<TaskSession | null>(null)
+  const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [now, setNow] = useState(Date.now())
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const { session } = useAuth()
+  const [showAddModal, setShowAddModal] = useState(false)
 
-  const loadDashboard = useCallback(async () => {
-    try {
-      const data = await fetchDashboard()
-      setDashboard(data)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong loading your roadmap.')
-    } finally {
-      setLoading(false)
+  const [elapsedBase, setElapsedBase] = useState(0)
+  const [elapsedBaseAt, setElapsedBaseAt] = useState<number>(Date.now())
+  const [liveElapsed, setLiveElapsed] = useState(0)
+
+  const tickRef = useRef<number | null>(null)
+
+  const refresh = useCallback(async () => {
+    const [taskList, dailyProgress, session] = await Promise.all([
+      listTasks(),
+      getDailyProgress(),
+      getActiveSession()
+    ])
+    setTasks(taskList)
+    setDaily(dailyProgress)
+    setActiveSession(session)
+    if (session) {
+      setElapsedBase(session.elapsed_seconds)
+      setElapsedBaseAt(Date.now())
     }
   }, [])
 
   useEffect(() => {
-    loadDashboard()
-    const id = window.setInterval(() => {
-      if (document.visibilityState === 'visible') loadDashboard()
-    }, 30000)
-    return () => window.clearInterval(id)
-  }, [loadDashboard])
+    refresh().catch((err) => setError(err instanceof Error ? err.message : 'Could not load your tasks.'))
+  }, [refresh])
 
-  // If the app was closed when a notification action was tapped, the service
-  // worker opens this route with the action. The page then performs the same
-  // authenticated backend transition as an in-app notification click.
   useEffect(() => {
-    const action = new URLSearchParams(window.location.search).get('notificationAction')
-    if (!action || action === 'open') return
-    const clean = `${window.location.pathname}${window.location.hash}`
-    window.history.replaceState({}, '', clean)
-    // Dashboard data is loaded first; the normal notification listener below
-    // handles already-open windows. Closed-window actions are intentionally
-    // handled after the initial dashboard load.
-    const timer = window.setTimeout(() => {
-      if (action === 'toggle-pause') handleTogglePauseRef.current()
-      if (action === 'complete-step') handleCompleteSubtaskRef.current()
-    }, 250)
-    return () => window.clearTimeout(timer)
-  }, [])
+    if (tickRef.current) window.clearInterval(tickRef.current)
+    if (activeSession?.status === 'ACTIVE') {
+      tickRef.current = window.setInterval(() => {
+        setLiveElapsed(elapsedBase + Math.floor((Date.now() - elapsedBaseAt) / 1000))
+      }, 1000)
+    } else {
+      setLiveElapsed(elapsedBase)
+    }
+    return () => {
+      if (tickRef.current) window.clearInterval(tickRef.current)
+    }
+  }, [activeSession, elapsedBase, elapsedBaseAt])
 
-  // Local ticker just for a smooth live display; the server's accumulated_seconds
-  // stays the source of truth and is re-synced on every pause/resume/complete.
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
-  }, [])
+  const ongoingTasks = useMemo(() => (tasks ?? []).filter((t) => t.status === 'ongoing'), [tasks])
+  const upcomingCount = useMemo(() => (tasks ?? []).filter((t) => t.status === 'upcoming').length, [tasks])
 
-  const handleTogglePauseRef = useRef<() => void>(() => {})
-  const handleCompleteSubtaskRef = useRef<() => void>(() => {})
-
-  // Notification action buttons call whatever the latest handler is,
-  // without re-subscribing to the service worker on every render.
-  useEffect(() => {
-    return onNotificationAction((action) => {
-      if (action === 'toggle-pause') handleTogglePauseRef.current()
-      if (action === 'complete-step') handleCompleteSubtaskRef.current()
-    })
-  }, [])
-
-  const activeSession = dashboard?.activeSession ?? null
-  const activeTask = useMemo(
-    () => dashboard?.tasks.find((t) => t.subtasks.some((s) => s.id === activeSession?.subtask_id)) ?? null,
-    [dashboard, activeSession]
-  )
-  const activeSubtask = activeTask?.subtasks.find((s) => s.id === activeSession?.subtask_id) ?? null
-  const livePercent = activeTask
-    ? Math.round(
-        (activeTask.subtasks.filter((s) => s.status === 'done').length / activeTask.subtasks.length) * 100
-      )
+  const percent = daily && daily.required_seconds > 0
+    ? Math.min(100, Math.round((daily.logged_seconds / daily.required_seconds) * 100))
     : 0
 
+  async function withBusy<T>(fn: () => Promise<T>): Promise<T | undefined> {
+    setBusy(true)
+    setError('')
+    try {
+      return await fn()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      return undefined
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCreateTask(draft: TaskDraft) {
+    await createTask(draft)
+    setShowAddModal(false)
+    await refresh()
+  }
+
   async function handleStart(taskId: string) {
-    const task = dashboard?.tasks.find((t) => t.id === taskId)
-    const firstPending = task?.subtasks.find((s) => s.status === 'pending')
-    if (!firstPending) return
-
-    setBusy(true)
-    try {
-      await startSession(firstPending.id)
-      await loadDashboard()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start this task.')
-    } finally {
-      setBusy(false)
-    }
+    requestNotificationPermission()
+    await withBusy(async () => {
+      const session = await startSession(taskId)
+      setActiveSession(session)
+      setElapsedBase(session.elapsed_seconds)
+      setElapsedBaseAt(Date.now())
+    })
   }
 
-  async function handleTogglePause() {
-    if (!activeSession) return
-    setBusy(true)
-    try {
-      if (activeSession.status === 'ACTIVE') {
-        await pauseSession(activeSession.id)
-      } else {
-        await resumeSession(activeSession.id)
-      }
-      await loadDashboard()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update the session.')
-    } finally {
-      setBusy(false)
-    }
+  async function handlePause(sessionId: string) {
+    await withBusy(async () => {
+      const session = await pauseSession(sessionId)
+      setActiveSession(session)
+      setElapsedBase(session.elapsed_seconds)
+      setElapsedBaseAt(Date.now())
+    })
   }
 
-  async function handleCompleteSubtask() {
-    if (!activeSession) return
-    setBusy(true)
-    try {
-      await completeSession(activeSession.id)
+  async function handleResume(sessionId: string) {
+    await withBusy(async () => {
+      const session = await resumeSession(sessionId)
+      setActiveSession(session)
+      setElapsedBase(session.elapsed_seconds)
+      setElapsedBaseAt(Date.now())
+    })
+  }
+
+  async function handleComplete(sessionId: string) {
+    await withBusy(async () => {
+      await completeSession(sessionId)
       playSubtaskChime()
-      await showTaskCompletionNotification(activeTask?.title ?? 'Task', `${activeSubtask?.title ?? 'Step'} completed. Today has been updated.`)
-      await loadDashboard()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not complete this step.')
-    } finally {
-      setBusy(false)
-    }
+      showTaskCompletionNotification('Session logged', 'Nice work — your time has been recorded.')
+      setActiveSession(null)
+      setElapsedBase(0)
+      await refresh()
+    })
   }
 
-  handleTogglePauseRef.current = handleTogglePause
-  handleCompleteSubtaskRef.current = handleCompleteSubtask
-
-  // Keep the OS/browser notification in sync with the active task so
-  // Pause/Resume and Complete step work from the notification itself.
-  useEffect(() => {
-    if (!activeTask || !activeSubtask || !activeSession) {
-      closeProgressNotification()
-      return
-    }
-    const isPaused = activeSession.status !== 'ACTIVE'
-    const dailyRemaining = activeSession.daily_remaining_seconds ?? activeSession.daily_target_seconds ?? null
-    const remainingLabel = dailyRemaining != null
-      ? `${Math.floor(dailyRemaining / 3600)}h ${Math.floor((dailyRemaining % 3600) / 60)}m daily target remaining`
-      : `${livePercent}% of this task`
-    showProgressNotification(
-      activeTask.title,
-      `${activeSubtask.title} · ${remainingLabel}`,
-      isPaused
-    )
-  }, [activeTask, activeSubtask, activeSession, livePercent])
-
-  if (loading) {
-    return (
-      <div className="min-h-screen">
-        <NavBar />
-        <LoadingState label="Loading your roadmap…" />
-      </div>
-    )
+  async function handleDelete(task: Task) {
+    if (!window.confirm(`Delete "${task.name}"? This cannot be undone.`)) return
+    await withBusy(async () => {
+      await deleteTask(task.id)
+      await refresh()
+    })
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen">
-        <NavBar />
-        <div className="mx-auto max-w-lg px-6 py-10">
-          <p className="text-sm text-red-400">{error}</p>
-          <button
-            onClick={loadDashboard}
-            className="mt-4 rounded-md border border-ink-border px-3 py-1.5 text-sm text-paper hover:border-flow"
-          >
-            Try again
-          </button>
-        </div>
-      </div>
-    )
-  }
+  const activeTask = tasks?.find((t) => t.id === activeSession?.task_id)
 
-  if (!dashboard || (!dashboard.roadmapId && dashboard.tasks.length === 0)) {
+  if (tasks === null || daily === null) {
     return (
-      <div className="min-h-screen">
+      <div className="min-h-screen bg-ink">
         <NavBar />
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="mx-auto max-w-lg px-6 py-24 text-center"
-        >
-          <div className="mx-auto mb-6 h-14 w-14 rounded-md border-2 border-black bg-ink-panel" />
-          <h1 className="font-display text-2xl text-paper">No active roadmap yet</h1>
-          <p className="mt-2 text-sm text-mute">Let AI help you build one, in a couple of minutes.</p>
-          <Link
-            to="/create-roadmap"
-            className="mt-6 inline-block rounded-md bg-flow px-4 py-2 text-sm font-medium text-ink hover:bg-flow/90"
-          >
-            Create your roadmap
-          </Link>
-        </motion.div>
-      </div>
-    )
-  }
-
-  if (dashboard.scheduledFor) {
-    return (
-      <div className="min-h-screen">
-        <NavBar />
-        <div className="mx-auto max-w-lg px-6 py-24 text-center">
-          <h1 className="font-display text-2xl text-paper">Your roadmap starts tomorrow</h1>
-          <p className="mt-2 text-sm text-mute">Today is kept free. Your daily plan begins on {dashboard.scheduledFor}.</p>
-          <Link to="/profile" className="mt-6 inline-block rounded-md border border-ink-border px-4 py-2 text-sm text-paper hover:border-flow">Set daily capacity</Link>
-        </div>
+        <LoadingState label="Loading today…" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-ink">
       <NavBar />
 
       <AnimatePresence>
-        {activeTask && activeSubtask && activeSession && (
-          <ActiveTaskBar
+        {activeSession && activeSession.status !== 'COMPLETED' && (
+          <SessionBar
+            session={activeSession}
             task={activeTask}
-            isPaused={activeSession.status !== 'ACTIVE'}
-            elapsedSeconds={Math.floor(computeElapsedSeconds(activeSession, now))}
-            targetSeconds={activeSession.daily_target_seconds}
-            livePercent={livePercent}
-            onTogglePause={handleTogglePause}
-            onCompleteSubtask={handleCompleteSubtask}
+            liveElapsedSeconds={liveElapsed}
+            onPause={() => handlePause(activeSession.id)}
+            onResume={() => handleResume(activeSession.id)}
+            onComplete={() => handleComplete(activeSession.id)}
+            busy={busy}
           />
         )}
       </AnimatePresence>
 
-      <div className="mx-auto max-w-5xl px-6 py-10">
-        <div className="mb-8 flex items-start justify-between">
-          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
-            <h1 className="font-display text-2xl text-paper">{dashboard.roadmapTitle ?? "Today's roadmap"}</h1>
-            <p className="mt-1 text-sm text-mute">Work through each task in order — one step at a time.</p>
-            {dashboard.roadmapId && (
-              <Link to={`/roadmaps/${dashboard.roadmapId}/edit`} className="mt-3 inline-flex items-center rounded-md border border-flow/50 px-3 py-1.5 text-xs font-medium text-flow hover:bg-flow/10">✦ Edit with AI</Link>
-            )}
-            {dashboard.roadmapId && (
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="mt-2 text-xs text-mute hover:text-red-400"
-              >
-                Delete this roadmap
-              </button>
-            )}
-          </motion.div>
-          <DayProgressBox percent={dashboard.dayPercent} />
-        </div>
-
-        {dashboard.adaptive && dashboard.adaptive.signal !== 'STABLE' && dashboard.adaptive.signal !== 'COMPLETE' && dashboard.roadmapId && (
-          <div className="mb-6 rounded-xl border border-flow/30 bg-ink-panel p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-xs uppercase tracking-wider text-flow">Adaptive check</p>
-                <h2 className="mt-1 font-display text-lg text-paper">Your execution pattern has changed.</h2>
-                <p className="mt-1 text-sm text-mute">{dashboard.adaptive.recommendation ?? 'We can compare your planned pace with your actual execution and rebalance the roadmap.'}</p>
-                <p className="mt-2 text-xs text-mute">Recent sustainable pace: {dashboard.adaptive.sustainable_daily_capacity_minutes}m/day · Remaining: {dashboard.adaptive.remaining_hours}h</p>
-              </div>
-              <Link to={`/roadmaps/${dashboard.roadmapId}/edit?adaptive=1`} className="shrink-0 rounded-md bg-flow px-4 py-2 text-sm font-medium text-ink hover:bg-flow/90">Rebalance with AI</Link>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {([['KEEP_DEADLINE','Keep deadline'],['REDUCE_SCOPE','Reduce scope'],['INCREASE_DAILY_TIME','Increase daily time'],['EXTEND_DEADLINE','Extend deadline']] as const).map(([value,label]) => (
-                <Link key={value} to={`/roadmaps/${dashboard.roadmapId}/edit?adaptive=1&strategy=${value}`} className="rounded-md border border-ink-border px-3 py-1.5 text-xs text-paper hover:border-flow hover:text-flow">{label}</Link>
-              ))}
+      <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
+        <section className="flex flex-col items-center gap-4 rounded-lg border border-ink-border p-6 sm:flex-row sm:justify-between">
+          <div className="flex items-center gap-4">
+            <DayProgressBox percent={percent} />
+            <div>
+              <p className="font-display text-lg text-paper">
+                {formatHoursMinutes(daily.logged_seconds)} of {formatHoursMinutes(daily.required_seconds)}
+              </p>
+              <p className="text-sm text-mute">
+                {daily.is_complete
+                  ? "Today's box is full."
+                  : daily.required_seconds === 0
+                    ? 'No tasks are active today.'
+                    : `${formatHoursMinutes(Math.max(0, daily.required_seconds - daily.logged_seconds))} left to go green.`}
+              </p>
             </div>
           </div>
+
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setShowAddModal(true)}
+            className="rounded-md bg-flow px-4 py-2.5 text-sm font-medium text-ink hover:bg-flow/90"
+          >
+            + Add task
+          </motion.button>
+        </section>
+
+        {error && (
+          <p role="alert" className="text-sm text-red-400">
+            {error}
+          </p>
         )}
 
-        <div className="mb-6 rounded-xl border border-ink-border bg-ink-panel p-5">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-wider text-mute">Today · {dashboard.date}</p>
-              <h2 className="mt-1 font-display text-xl text-paper">{Math.floor(dashboard.dailyCapacitySeconds / 3600)}h {Math.round((dashboard.dailyCapacitySeconds % 3600) / 60)}m target capacity</h2>
-            </div>
-            <div className="text-right">
-              <p className="text-sm text-paper">{Math.floor(dashboard.completedSeconds / 3600)}h {Math.round((dashboard.completedSeconds % 3600) / 60)}m completed</p>
-              <p className="text-xs text-mute">{Math.floor(dashboard.remainingSecondsToday / 3600)}h {Math.round((dashboard.remainingSecondsToday % 3600) / 60)}m remaining</p>
-            </div>
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-base text-paper">Ongoing ({ongoingTasks.length})</h2>
+            {upcomingCount > 0 && (
+              <span className="text-xs text-mute">{upcomingCount} upcoming — see Profile</span>
+            )}
           </div>
-          {dashboard.dailyCompleted && <div className="mt-4 rounded-lg border border-flow/40 bg-flow/10 px-4 py-3 text-sm text-flow">✓ Daily plan complete. Great work — your execution history has been recorded.</div>}
-          {dashboard.plan?.items.length ? (
-            <div className="mt-5 flex flex-col gap-3">
-              {dashboard.plan.items.map((item) => (
-                <div key={item.id} className={`flex items-center justify-between rounded-lg border px-3 py-3 ${item.remaining_seconds <= 0 ? 'border-flow/30 bg-flow/5' : 'border-black/60'}`}>
-                  <div className="min-w-0"><p className="text-sm text-paper">{item.remaining_seconds <= 0 ? '✓ ' : ''}{item.task_title}</p><p className="truncate text-xs text-mute">{item.subtask_title}</p></div>
-                  <span className="ml-3 whitespace-nowrap text-sm text-paper">{Math.floor(item.actual_seconds / 3600)}h {Math.round((item.actual_seconds % 3600) / 60)}m / {Math.floor(item.allocated_seconds / 3600)}h {Math.round((item.allocated_seconds % 3600) / 60)}m</span>
-                </div>
+
+          {ongoingTasks.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-ink-border p-6 text-center text-sm text-mute">
+              No tasks running today. Add one to get started.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {ongoingTasks.map((task) => (
+                <TaskCard
+                  key={task.id}
+                  task={task}
+                  activeSession={activeSession}
+                  liveElapsedSeconds={liveElapsed}
+                  onStart={handleStart}
+                  onPause={handlePause}
+                  onResume={handleResume}
+                  onComplete={handleComplete}
+                  onDelete={handleDelete}
+                  busy={busy}
+                />
               ))}
             </div>
-          ) : <p className="mt-4 text-sm text-mute">No executable work fits today's capacity, or all available work is complete.</p>}
-          {dashboard.recommendedNextTask && <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-flow/30 px-4 py-3"><div><p className="text-xs uppercase tracking-wider text-mute">Recommended next</p><p className="mt-1 text-sm text-paper">{dashboard.recommendedNextTask.task_title} — {dashboard.recommendedNextTask.subtask_title}</p><p className="text-xs text-mute">{Math.floor(dashboard.recommendedNextTask.remaining_seconds / 3600)}h {Math.round((dashboard.recommendedNextTask.remaining_seconds % 3600) / 60)}m remaining today</p></div><span className="text-flow">→</span></div>}
-          {dashboard.totalRemainingSeconds > 0 && dashboard.feasibilityDays && <p className="mt-2 text-xs text-mute">About {dashboard.feasibilityDays} days at this capacity for the remaining workload.</p>}
-          {dashboard.roadmapDeadline && dashboard.deadlineInfeasible && <p className="mt-2 text-xs text-amber-300">At this capacity, the {dashboard.roadmapDeadline} deadline needs about {Math.ceil((dashboard.requiredDailySeconds ?? 0) / 60)} minutes/day, so the current pace is not enough.</p>}
-        </div>
+          )}
+        </section>
+      </main>
 
-        <div className={`grid gap-5 sm:grid-cols-2 lg:grid-cols-3 ${busy ? 'pointer-events-none opacity-70' : ''}`}>
-          {dashboard.tasks.map((task, i) => (
-            <motion.div
-              key={task.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, delay: i * 0.06 }}
-            >
-              <TaskBox task={task} isActive={task.id === activeTask?.id} onStart={handleStart} />
-            </motion.div>
-          ))}
-        </div>
-      </div>
-
-      {showDeleteModal && dashboard.roadmapId && session?.user.email && (
-        <DeleteRoadmapModal
-          roadmapId={dashboard.roadmapId}
-          roadmapTitle={dashboard.roadmapTitle ?? 'this roadmap'}
-          email={session.user.email}
-          onClose={() => setShowDeleteModal(false)}
-          onDeleted={() => {
-            setShowDeleteModal(false)
-            loadDashboard()
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {showAddModal && (
+          <AddTaskModal onClose={() => setShowAddModal(false)} onCreate={handleCreateTask} />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

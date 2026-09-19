@@ -91,7 +91,7 @@ export default function LoginPage() {
         <div className="w-full max-w-sm">
           <h1 className="font-display text-3xl text-paper">RealPathFlow</h1>
           <p className="mt-2 text-sm text-mute">
-            {mode === 'signin' ? 'Sign in to pick up where you left off.' : 'Create an account to start your roadmap.'}
+            {mode === 'signin' ? 'Sign in to pick up where you left off.' : 'Create an account to start tracking your tasks.'}
           </p>
 
           <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-4">
