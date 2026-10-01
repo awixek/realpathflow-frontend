@@ -36,6 +36,10 @@ export async function listTasks(): Promise<Task[]> {
   return data.tasks
 }
 
+export async function getTask(taskId: string): Promise<Task> {
+  return request<Task>(`/api/v1/tasks/${taskId}`)
+}
+
 export async function createTask(draft: TaskDraft): Promise<Task> {
   return request<Task>('/api/v1/tasks', {
     method: 'POST',

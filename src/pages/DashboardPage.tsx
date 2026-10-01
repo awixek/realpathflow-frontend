@@ -1,74 +1,41 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import AddTaskModal from '../components/AddTaskModal'
 import DayProgressBox from '../components/DayProgressBox'
-import LoadingState from '../components/LoadingState'
+import { DashboardSkeleton } from '../components/LoadingState'
 import NavBar from '../components/NavBar'
 import SessionBar from '../components/SessionBar'
 import TaskCard from '../components/TaskCard'
 import { formatHoursMinutes } from '../lib/time'
-import {
-  completeSession,
-  createTask,
-  deleteTask,
-  getActiveSession,
-  listTasks,
-  pauseSession,
-  resumeSession,
-  startSession,
-  TaskDraft
-} from '../lib/tasksApi'
+import { createTask, deleteTask, listTasks, TaskDraft, updateTask } from '../lib/tasksApi'
 import { getDailyProgress } from '../lib/profileApi'
-import { DailyProgress, Task, TaskSession } from '../types'
-import { playSubtaskChime } from '../lib/sound'
-import { requestNotificationPermission, showTaskCompletionNotification } from '../lib/notifications'
+import { useActiveSession } from '../lib/ActiveSessionContext'
+import { DailyProgress, Task } from '../types'
+import { friendlyError } from '../lib/errorMessages'
 
 export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [daily, setDaily] = useState<DailyProgress | null>(null)
-  const [activeSession, setActiveSession] = useState<TaskSession | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loadingFailed, setLoadingFailed] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
 
-  const [elapsedBase, setElapsedBase] = useState(0)
-  const [elapsedBaseAt, setElapsedBaseAt] = useState<number>(Date.now())
-  const [liveElapsed, setLiveElapsed] = useState(0)
-
-  const tickRef = useRef<number | null>(null)
+  const session = useActiveSession()
 
   const refresh = useCallback(async () => {
-    const [taskList, dailyProgress, session] = await Promise.all([
-      listTasks(),
-      getDailyProgress(),
-      getActiveSession()
-    ])
+    const [taskList, dailyProgress] = await Promise.all([listTasks(), getDailyProgress()])
     setTasks(taskList)
     setDaily(dailyProgress)
-    setActiveSession(session)
-    if (session) {
-      setElapsedBase(session.elapsed_seconds)
-      setElapsedBaseAt(Date.now())
-    }
   }, [])
 
   useEffect(() => {
-    refresh().catch((err) => setError(err instanceof Error ? err.message : 'Could not load your tasks.'))
+    refresh().catch((err) => {
+      setError(friendlyError(err, 'Couldn’t load your tasks. Please try again.'))
+      setLoadingFailed(true)
+    })
   }, [refresh])
-
-  useEffect(() => {
-    if (tickRef.current) window.clearInterval(tickRef.current)
-    if (activeSession?.status === 'ACTIVE') {
-      tickRef.current = window.setInterval(() => {
-        setLiveElapsed(elapsedBase + Math.floor((Date.now() - elapsedBaseAt) / 1000))
-      }, 1000)
-    } else {
-      setLiveElapsed(elapsedBase)
-    }
-    return () => {
-      if (tickRef.current) window.clearInterval(tickRef.current)
-    }
-  }, [activeSession, elapsedBase, elapsedBaseAt])
 
   const ongoingTasks = useMemo(() => (tasks ?? []).filter((t) => t.status === 'ongoing'), [tasks])
   const upcomingCount = useMemo(() => (tasks ?? []).filter((t) => t.status === 'upcoming').length, [tasks])
@@ -77,79 +44,74 @@ export default function DashboardPage() {
     ? Math.min(100, Math.round((daily.logged_seconds / daily.required_seconds) * 100))
     : 0
 
-  async function withBusy<T>(fn: () => Promise<T>): Promise<T | undefined> {
-    setBusy(true)
-    setError('')
-    try {
-      return await fn()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
-      return undefined
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function handleCreateTask(draft: TaskDraft) {
     await createTask(draft)
     setShowAddModal(false)
     await refresh()
   }
 
+  async function handleEditTask(draft: TaskDraft) {
+    if (!editingTask) return
+    await updateTask(editingTask.id, draft)
+    setEditingTask(null)
+    await refresh()
+  }
+
   async function handleStart(taskId: string) {
-    requestNotificationPermission()
-    await withBusy(async () => {
-      const session = await startSession(taskId)
-      setActiveSession(session)
-      setElapsedBase(session.elapsed_seconds)
-      setElapsedBaseAt(Date.now())
-    })
+    const task = tasks?.find((t) => t.id === taskId)
+    if (!task) return
+    await session.start(task)
+    await refresh()
   }
 
-  async function handlePause(sessionId: string) {
-    await withBusy(async () => {
-      const session = await pauseSession(sessionId)
-      setActiveSession(session)
-      setElapsedBase(session.elapsed_seconds)
-      setElapsedBaseAt(Date.now())
-    })
+  async function handlePause() {
+    await session.pause()
+    await refresh()
   }
 
-  async function handleResume(sessionId: string) {
-    await withBusy(async () => {
-      const session = await resumeSession(sessionId)
-      setActiveSession(session)
-      setElapsedBase(session.elapsed_seconds)
-      setElapsedBaseAt(Date.now())
-    })
+  async function handleResume() {
+    await session.resume()
+    await refresh()
   }
 
-  async function handleComplete(sessionId: string) {
-    await withBusy(async () => {
-      await completeSession(sessionId)
-      playSubtaskChime()
-      showTaskCompletionNotification('Session logged', 'Nice work — your time has been recorded.')
-      setActiveSession(null)
-      setElapsedBase(0)
-      await refresh()
-    })
+  async function handleComplete() {
+    await session.complete()
+    await refresh()
   }
 
   async function handleDelete(task: Task) {
     if (!window.confirm(`Delete "${task.name}"? This cannot be undone.`)) return
-    await withBusy(async () => {
+    setBusy(true)
+    setError('')
+    try {
       await deleteTask(task.id)
       await refresh()
-    })
+    } catch (err) {
+      setError(friendlyError(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const activeTask = tasks?.find((t) => t.id === activeSession?.task_id)
+  const activeTask = tasks?.find((t) => t.id === session.activeTaskId)
+  const isBusy = busy || session.busy
 
   if (tasks === null || daily === null) {
     return (
       <div className="min-h-screen bg-ink">
         <NavBar />
-        <LoadingState label="Loading today…" />
+        {loadingFailed ? (
+          <main className="mx-auto flex max-w-3xl flex-col items-center gap-4 px-6 py-16 text-center">
+            <p className="font-display text-lg text-paper">Couldn’t load today’s workspace.</p>
+            <p className="text-sm text-mute">Your data is safe. Try loading it again.</p>
+            <button
+              onClick={() => { setLoadingFailed(false); setError(''); refresh().catch((err) => { setError(friendlyError(err, 'Couldn’t load your tasks. Please try again.')); setLoadingFailed(true) }) }}
+              className="rounded-md bg-flow px-4 py-2.5 text-sm font-medium text-ink hover:bg-flow/90"
+            >
+              Try again
+            </button>
+          </main>
+        ) : <DashboardSkeleton />}
       </div>
     )
   }
@@ -159,15 +121,15 @@ export default function DashboardPage() {
       <NavBar />
 
       <AnimatePresence>
-        {activeSession && activeSession.status !== 'COMPLETED' && (
+        {session.activeSession && session.activeSession.status !== 'COMPLETED' && (
           <SessionBar
-            session={activeSession}
+            session={session.activeSession}
             task={activeTask}
-            liveElapsedSeconds={liveElapsed}
-            onPause={() => handlePause(activeSession.id)}
-            onResume={() => handleResume(activeSession.id)}
-            onComplete={() => handleComplete(activeSession.id)}
-            busy={busy}
+            liveElapsedSeconds={session.liveElapsedSeconds}
+            onPause={handlePause}
+            onResume={handleResume}
+            onComplete={handleComplete}
+            busy={isBusy}
           />
         )}
       </AnimatePresence>
@@ -199,9 +161,9 @@ export default function DashboardPage() {
           </motion.button>
         </section>
 
-        {error && (
+        {(error || session.error) && (
           <p role="alert" className="text-sm text-red-400">
-            {error}
+            {error || session.error}
           </p>
         )}
 
@@ -223,14 +185,15 @@ export default function DashboardPage() {
                 <TaskCard
                   key={task.id}
                   task={task}
-                  activeSession={activeSession}
-                  liveElapsedSeconds={liveElapsed}
+                  activeSession={session.activeSession}
+                  liveElapsedSeconds={session.liveElapsedSeconds}
                   onStart={handleStart}
                   onPause={handlePause}
                   onResume={handleResume}
                   onComplete={handleComplete}
+                  onEdit={setEditingTask}
                   onDelete={handleDelete}
-                  busy={busy}
+                  busy={isBusy}
                 />
               ))}
             </div>
@@ -240,7 +203,16 @@ export default function DashboardPage() {
 
       <AnimatePresence>
         {showAddModal && (
-          <AddTaskModal onClose={() => setShowAddModal(false)} onCreate={handleCreateTask} />
+          <AddTaskModal onClose={() => setShowAddModal(false)} onCreate={handleCreateTask} mode="create" />
+        )}
+        {editingTask && (
+          <AddTaskModal
+            key={editingTask.id}
+            initialTask={editingTask}
+            mode="edit"
+            onClose={() => setEditingTask(null)}
+            onCreate={handleEditTask}
+          />
         )}
       </AnimatePresence>
     </div>

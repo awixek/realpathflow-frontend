@@ -1,28 +1,35 @@
 import { FormEvent, useState } from 'react'
 import { motion } from 'framer-motion'
 import { TaskDraft } from '../lib/tasksApi'
+import { Task } from '../types'
 import { WEEKDAYS } from '../lib/time'
 import { DEFAULT_FREQUENCY, FrequencyType, TaskFrequency } from '../types'
+import DatePicker from './DatePicker'
+import { friendlyError } from '../lib/errorMessages'
 
 const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1)
 
 export default function AddTaskModal({
   onClose,
-  onCreate
+  onCreate,
+  initialTask,
+  mode = 'create'
 }: {
   onClose: () => void
   onCreate: (draft: TaskDraft) => Promise<void>
+  initialTask?: Task
+  mode?: 'create' | 'edit'
 }) {
-  const [name, setName] = useState('')
-  const [subject, setSubject] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [hours, setHours] = useState(1)
-  const [minutes, setMinutes] = useState(0)
-  const [isPublic, setIsPublic] = useState(false)
+  const [name, setName] = useState(initialTask?.name ?? '')
+  const [subject, setSubject] = useState(initialTask?.subject ?? '')
+  const [startDate, setStartDate] = useState(initialTask?.start_date ?? '')
+  const [endDate, setEndDate] = useState(initialTask?.end_date ?? '')
+  const [hours, setHours] = useState(Math.floor((initialTask?.daily_minutes ?? 60) / 60))
+  const [minutes, setMinutes] = useState((initialTask?.daily_minutes ?? 60) % 60)
+  const [isPublic, setIsPublic] = useState(initialTask?.is_public ?? false)
 
-  const [frequencyOpen, setFrequencyOpen] = useState(false)
-  const [frequency, setFrequency] = useState<TaskFrequency>(DEFAULT_FREQUENCY)
+  const [frequencyOpen, setFrequencyOpen] = useState(Boolean(initialTask?.frequency && initialTask.frequency.frequency_type !== 'NONE'))
+  const [frequency, setFrequency] = useState<TaskFrequency>(initialTask?.frequency ?? DEFAULT_FREQUENCY)
   const [manualDateInput, setManualDateInput] = useState('')
 
   const [error, setError] = useState('')
@@ -89,10 +96,10 @@ export default function AddTaskModal({
         end_date: endDate,
         daily_minutes: dailyMinutes,
         is_public: isPublic,
-        frequency: frequencyOpen ? frequency : DEFAULT_FREQUENCY
+        frequency: frequencyOpen ? frequency : (mode === 'edit' ? (initialTask?.frequency ?? DEFAULT_FREQUENCY) : DEFAULT_FREQUENCY)
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create the task.')
+      setError(friendlyError(err, mode === 'edit' ? 'Couldn’t save the task. Please check the details and try again.' : 'Couldn’t create the task. Please check the details and try again.'))
       setSaving(false)
       return
     }
@@ -106,7 +113,7 @@ export default function AddTaskModal({
         className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg border border-ink-border bg-ink-panel p-6"
       >
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="font-display text-xl text-paper">Add task</h2>
+          <h2 className="font-display text-xl text-paper">{mode === 'edit' ? 'Edit task' : 'Add task'}</h2>
           <button onClick={onClose} className="text-mute hover:text-paper" aria-label="Close">
             ✕
           </button>
@@ -133,25 +140,9 @@ export default function AddTaskModal({
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-paper/80">Start date</span>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="rounded-md border border-ink-border bg-ink px-3 py-2.5 text-paper outline-none focus:border-flow"
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-sm text-paper/80">End date</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="rounded-md border border-ink-border bg-ink px-3 py-2.5 text-paper outline-none focus:border-flow"
-              />
-            </label>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <DatePicker value={startDate} onChange={setStartDate} label="Start date" />
+            <DatePicker value={endDate} onChange={setEndDate} label="End date" min={startDate || undefined} />
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -269,12 +260,9 @@ export default function AddTaskModal({
                   <div className="flex flex-col gap-2">
                     <p className="text-xs text-mute">Only the dates you pick here will be active.</p>
                     <div className="flex gap-2">
-                      <input
-                        type="date"
-                        value={manualDateInput}
-                        onChange={(e) => setManualDateInput(e.target.value)}
-                        className="flex-1 rounded-md border border-ink-border bg-ink px-3 py-2 text-sm text-paper outline-none focus:border-flow"
-                      />
+                      <div className="min-w-0 flex-1">
+                        <DatePicker value={manualDateInput} onChange={setManualDateInput} label="Active date" min={startDate || undefined} max={endDate || undefined} />
+                      </div>
                       <button
                         type="button"
                         onClick={addManualDate}
@@ -326,7 +314,7 @@ export default function AddTaskModal({
             whileTap={{ scale: 0.98 }}
             className="mt-1 rounded-md bg-flow py-2.5 font-medium text-ink transition-colors hover:bg-flow/90 disabled:opacity-60"
           >
-            {saving ? 'Adding…' : 'Add task'}
+            {saving ? (mode === 'edit' ? 'Saving…' : 'Adding…') : (mode === 'edit' ? 'Save changes' : 'Add task')}
           </motion.button>
         </form>
       </motion.div>

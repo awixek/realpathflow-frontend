@@ -62,9 +62,44 @@ export interface ProfileSummary {
   upcoming_tasks: Task[]
 }
 
+export interface HistoryDay {
+  date: string
+  required_seconds: number
+  logged_seconds: number
+  is_active: boolean
+  is_complete: boolean
+}
+
+export interface ProfileHistory {
+  start_date: string
+  end_date: string
+  current_streak_days: number
+  best_streak_days: number
+  days: HistoryDay[]
+}
+
 export const DEFAULT_FREQUENCY: TaskFrequency = {
   frequency_type: 'NONE',
   excluded_weekdays: [],
   excluded_month_days: [],
   manual_active_dates: []
+}
+
+
+export interface PublicTask {
+  id: string
+  name: string
+  subject: string | null
+  start_date: string
+  end_date: string
+  daily_minutes: number
+  frequency_type: FrequencyType
+  status: TaskStatus
+  created_at: string | null
+}
+
+export interface PublicProfile {
+  username: string
+  full_name: string | null
+  tasks: PublicTask[]
 }

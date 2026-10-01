@@ -37,7 +37,7 @@ export async function closeProgressNotification() {
   registration?.active?.postMessage({ type: 'CLOSE_PROGRESS_NOTIFICATION' })
 }
 
-export type NotificationAction = 'toggle-pause' | 'complete-step'
+export type NotificationAction = 'toggle-pause' | 'complete-session'
 
 /** Fires when the person taps an action button on the notification. Returns an unsubscribe function. */
 export function onNotificationAction(handler: (action: NotificationAction) => void): () => void {
@@ -49,4 +49,32 @@ export function onNotificationAction(handler: (action: NotificationAction) => vo
   }
   navigator.serviceWorker.addEventListener('message', listener)
   return () => navigator.serviceWorker.removeEventListener('message', listener)
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = window.atob(base64)
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)))
+}
+
+export async function subscribeToPush(publicKey: string): Promise<PushSubscription | null> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null
+  const registration = await registerServiceWorker()
+  if (!registration) return null
+  const permissionGranted = await requestNotificationPermission()
+  if (!permissionGranted) return null
+  const existing = await registration.pushManager.getSubscription()
+  if (existing) return existing
+  const convertedKey = urlBase64ToUint8Array(publicKey)
+  return registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: convertedKey.buffer as ArrayBuffer,
+  })
+}
+
+export async function getPushSubscription(): Promise<PushSubscription | null> {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null
+  const registration = await registerServiceWorker()
+  return registration?.pushManager.getSubscription() ?? null
 }

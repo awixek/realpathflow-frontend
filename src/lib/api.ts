@@ -16,9 +16,14 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   try {
     return await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
   } catch {
-    throw new Error(
-      `Network/CORS error contacting the RealPathFlow API at ${API_BASE_URL}. ` +
-        'Check VITE_API_BASE_URL and the Railway ALLOWED_ORIGINS value.'
-    )
+    throw new TypeError('Network request failed')
   }
+}
+
+export async function apiJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const response = await apiFetch(path, options)
+  const text = await response.text()
+  const data = text ? JSON.parse(text) : null
+  if (!response.ok) throw Object.assign(new Error(data?.detail || 'Request failed'), { status: response.status })
+  return data as T
 }

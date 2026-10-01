@@ -37,6 +37,7 @@ export default function TaskCard({
   onResume,
   onComplete,
   onTogglePublic,
+  onEdit,
   onDelete,
   busy
 }: {
@@ -44,10 +45,11 @@ export default function TaskCard({
   activeSession: TaskSession | null
   liveElapsedSeconds: number
   onStart: (taskId: string) => void
-  onPause: (sessionId: string) => void
-  onResume: (sessionId: string) => void
-  onComplete: (sessionId: string) => void
+  onPause: () => void
+  onResume: () => void
+  onComplete: () => void
   onTogglePublic?: (task: Task) => void
+  onEdit?: (task: Task) => void
   onDelete?: (task: Task) => void
   busy: boolean
 }) {
@@ -100,14 +102,14 @@ export default function TaskCard({
             <>
               <button
                 disabled={busy}
-                onClick={() => onPause(activeSession!.id)}
+                onClick={() => onPause()}
                 className="rounded-md border border-ink-border px-3 py-1.5 text-sm text-paper hover:border-flow disabled:opacity-50"
               >
                 Pause
               </button>
               <button
                 disabled={busy}
-                onClick={() => onComplete(activeSession!.id)}
+                onClick={() => onComplete()}
                 className="rounded-md bg-flow px-3 py-1.5 text-sm font-medium text-ink hover:bg-flow/90 disabled:opacity-50"
               >
                 Stop
@@ -118,14 +120,14 @@ export default function TaskCard({
             <>
               <button
                 disabled={busy}
-                onClick={() => onResume(activeSession!.id)}
+                onClick={() => onResume()}
                 className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow hover:bg-flow hover:text-ink disabled:opacity-50"
               >
                 Resume
               </button>
               <button
                 disabled={busy}
-                onClick={() => onComplete(activeSession!.id)}
+                onClick={() => onComplete()}
                 className="rounded-md border border-ink-border px-3 py-1.5 text-sm text-paper hover:border-flow disabled:opacity-50"
               >
                 Stop
@@ -138,11 +140,16 @@ export default function TaskCard({
         </div>
       )}
 
-      {(onTogglePublic || onDelete) && (
+      {(onTogglePublic || onEdit || onDelete) && (
         <div className="flex gap-3 border-t border-ink-border pt-2 text-xs">
           {onTogglePublic && (
             <button onClick={() => onTogglePublic(task)} className="text-mute hover:text-paper">
               {task.is_public ? 'Make private' : 'Make public'}
+            </button>
+          )}
+          {onEdit && (
+            <button onClick={() => onEdit(task)} className="text-mute hover:text-paper">
+              Edit
             </button>
           )}
           {onDelete && (

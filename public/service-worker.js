@@ -28,7 +28,7 @@ self.addEventListener('message', (event) => {
       badge: '/icons/icon-192.png',
       actions: [
         { action: 'toggle-pause', title: isPaused ? '▶ Resume' : '⏸ Pause' },
-        { action: 'complete-step', title: '✓ Complete step' }
+        { action: 'complete-session', title: '■ Stop' }
       ],
       data: { isPaused }
     })
@@ -57,7 +57,7 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      if (action === 'toggle-pause' || action === 'complete-step') {
+      if (action === 'toggle-pause' || action === 'complete-session') {
         clients.forEach((client) => client.postMessage({ type: 'NOTIFICATION_ACTION', action }))
         return
       }
@@ -68,4 +68,21 @@ self.addEventListener('notificationclick', (event) => {
       return self.clients.openWindow('/?notificationAction=' + encodeURIComponent(action || 'open'))
     })
   )
+})
+
+// Real Web Push delivery. The server sends a standard push payload; the
+// service worker displays it even when the app is closed.
+self.addEventListener('push', (event) => {
+  let payload = {}
+  try { payload = event.data ? event.data.json() : {} } catch (_) {}
+  const title = payload.title || 'RealPathFlow reminder'
+  const body = payload.body || 'You have a task waiting for you today.'
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    tag: payload.tag || 'realpathflow-reminder',
+    renotify: true,
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url: payload.url || '/' },
+  }))
 })

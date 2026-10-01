@@ -1,7 +1,7 @@
 {
   "name": "RealPathFlow",
   "short_name": "RealPathFlow",
-  "description": "AI-personalized roadmaps with time-verified progress.",
+  "description": "Track your parallel tasks with time-verified daily progress.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
