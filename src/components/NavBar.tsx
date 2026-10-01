@@ -1,7 +1,7 @@
 import { ReactNode } from 'react'
 import { motion } from 'framer-motion'
 import { NavLink, useLocation } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import ProfileMenu from './ProfileMenu'
 
 function NavItem({ to, end, children }: { to: string; end?: boolean; children: ReactNode }) {
   const location = useLocation()
@@ -39,12 +39,7 @@ export default function NavBar() {
         <NavItem to="/profile">Profile</NavItem>
       </div>
 
-      <button
-        onClick={() => supabase.auth.signOut()}
-        className="text-sm text-mute transition-colors hover:text-paper"
-      >
-        Sign out
-      </button>
+      <ProfileMenu />
     </nav>
   )
 }
