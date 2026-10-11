@@ -66,10 +66,9 @@ export async function subscribeToPush(publicKey: string): Promise<PushSubscripti
   if (!permissionGranted) return null
   const existing = await registration.pushManager.getSubscription()
   if (existing) return existing
-  const convertedKey = urlBase64ToUint8Array(publicKey)
   return registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey: convertedKey.buffer as ArrayBuffer,
+    applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource,
   })
 }
 

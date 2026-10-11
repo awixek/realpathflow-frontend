@@ -20,6 +20,10 @@ import { playSubtaskChime } from './sound'
 import { formatClock, minutesToLabel } from './time'
 import { Task, TaskSession } from '../types'
 
+export interface Celebration {
+  taskName: string
+}
+
 interface ActiveSessionContextValue {
   activeSession: TaskSession | null
   activeTaskId: string | null
@@ -27,6 +31,11 @@ interface ActiveSessionContextValue {
   liveElapsedSeconds: number
   busy: boolean
   error: string
+  /** Set briefly when the server auto-stops a session because that task's
+   * own daily target was reached - the UI shows a congratulatory toast
+   * while this is non-null, then it self-clears. */
+  celebration: Celebration | null
+  dismissCelebration: () => void
   /** Call after starting a session from a page that already has the full Task object (avoids an extra fetch). */
   start: (task: Task) => Promise<void>
   pause: () => Promise<void>
@@ -49,6 +58,8 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
   const [activeTaskDailyMinutes, setActiveTaskDailyMinutes] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [celebration, setCelebration] = useState<Celebration | null>(null)
+  const dismissCelebration = useCallback(() => setCelebration(null), [])
 
   const [elapsedBase, setElapsedBase] = useState(0)
   const [elapsedBaseAt, setElapsedBaseAt] = useState(Date.now())
@@ -87,6 +98,19 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
     }
     try {
       const s = await getActiveSession()
+      if (s && s.auto_stop_reason) {
+        // Target was reached, or the timer went stale, while nobody had
+        // the app open to see it tick over - still worth telling them.
+        const task = await getTask(s.task_id).catch(() => null)
+        const taskName = task?.name ?? 'Task'
+        if (s.auto_stop_reason === 'target_reached') {
+          setCelebration({ taskName })
+        }
+        applySession(null)
+        setActiveTaskName(null)
+        setActiveTaskDailyMinutes(null)
+        return
+      }
       applySession(s)
       if (s) {
         const task = await getTask(s.task_id).catch(() => null)
@@ -125,12 +149,48 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
     setLiveElapsedSeconds(currentElapsed)
     notify(activeSession, activeTaskName, activeTaskDailyMinutes, currentElapsed)
 
+    // Re-asks the server "is this session still supposed to be running?"
+    // on the same cadence as the notification resync. The server is the
+    // one place that knows about a target-reached or stale-timeout
+    // auto-stop (app/core/task_session_service.py) - a client-only timer
+    // would never notice either on its own, especially while this tab
+    // isn't the one driving the UI (another device, or just backgrounded).
+    async function checkServerForAutoStop() {
+      try {
+        const s = await getActiveSession()
+        if (s && s.auto_stop_reason) {
+          const taskName = activeTaskName ?? 'Task'
+          if (s.auto_stop_reason === 'target_reached') {
+            playSubtaskChime()
+            setCelebration({ taskName })
+            showTaskCompletionNotification('Target complete 🎉', `"${taskName}" hit today's target.`)
+          } else {
+            showTaskCompletionNotification(
+              'Timer stopped',
+              `"${taskName}" had been running for a long time, so we paused it.`
+            )
+          }
+          applySession(null)
+          setActiveTaskName(null)
+          setActiveTaskDailyMinutes(null)
+        } else if (!s) {
+          // Ended from elsewhere (another tab/device, or deleted mid-run).
+          applySession(null)
+          setActiveTaskName(null)
+          setActiveTaskDailyMinutes(null)
+        }
+      } catch {
+        // Transient network hiccup - try again on the next resync tick.
+      }
+    }
+
     if (activeSession.status === 'ACTIVE') {
       tickRef.current = window.setInterval(() => {
         const elapsed = elapsedBase + Math.floor((Date.now() - elapsedBaseAt) / 1000)
         setLiveElapsedSeconds(elapsed)
         if (elapsed % NOTIFICATION_RESYNC_SECONDS === 0) {
           notify(activeSession, activeTaskName, activeTaskDailyMinutes, elapsed)
+          void checkServerForAutoStop()
         }
       }, 1000)
     }
@@ -139,7 +199,7 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       if (tickRef.current) window.clearInterval(tickRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSession, elapsedBase, elapsedBaseAt, activeTaskName, activeTaskDailyMinutes])
+  }, [activeSession, elapsedBase, elapsedBaseAt, activeTaskName, activeTaskDailyMinutes, applySession])
 
   async function withBusy(fn: () => Promise<void>) {
     setBusy(true)
@@ -224,6 +284,8 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
     liveElapsedSeconds,
     busy,
     error,
+    celebration,
+    dismissCelebration,
     start,
     pause,
     resume,

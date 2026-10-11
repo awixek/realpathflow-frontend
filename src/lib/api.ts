@@ -8,7 +8,12 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   } = await supabase.auth.getSession()
 
   const headers = new Headers(options.headers)
-  headers.set('Content-Type', 'application/json')
+  // Leave Content-Type unset for FormData (file uploads) - the browser
+  // must set it itself, including the multipart boundary; setting it
+  // manually here would strip that boundary and break parsing server-side.
+  if (!(options.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
   if (session?.access_token) {
     headers.set('Authorization', `Bearer ${session.access_token}`)
   }

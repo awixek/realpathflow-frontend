@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
+import { AnimatePresence } from 'framer-motion'
 import { ProfileSkeleton } from '../components/LoadingState'
 import NavBar from '../components/NavBar'
 import TaskCard from '../components/TaskCard'
+import AvatarBadge from '../components/AvatarBadge'
+import ProfileEditModal from '../components/ProfileEditModal'
 import ProfileHistoryHeatmap from '../components/ProfileHistoryHeatmap'
 import { formatHoursMinutes } from '../lib/time'
 import { deleteTask, updateTask } from '../lib/tasksApi'
-import { getCurrentUserProfile, getProfileSummary } from '../lib/profileApi'
+import {
+  CurrentUserProfile,
+  getCurrentUserProfile,
+  getProfileSummary,
+  invalidateCurrentUserProfileCache
+} from '../lib/profileApi'
 import { ProfileSummary, Task } from '../types'
 import { friendlyError } from '../lib/errorMessages'
 import { disablePushNotifications, enablePushNotifications, getPushConfig } from '../lib/pushApi'
@@ -51,7 +59,8 @@ export default function ProfilePage() {
   const [pushEnabled, setPushEnabled] = useState(false)
   const [pushAvailable, setPushAvailable] = useState(false)
   const [pushBusy, setPushBusy] = useState(false)
-  const [username, setUsername] = useState<string | null>(null)
+  const [me, setMe] = useState<CurrentUserProfile | null>(null)
+  const [showEditModal, setShowEditModal] = useState(false)
 
   const refresh = useCallback(async () => {
     setSummary(await getProfileSummary())
@@ -62,7 +71,7 @@ export default function ProfilePage() {
       setPushAvailable(config.enabled && !!config.public_key)
       if (config.enabled) setPushEnabled(!!(await getPushSubscription()))
     }).catch(() => setPushAvailable(false))
-    getCurrentUserProfile().then((me) => setUsername(me.profile?.username ?? null)).catch(() => setUsername(null))
+    getCurrentUserProfile().then(setMe).catch(() => setMe(null))
     refresh().catch((err) => { setError(friendlyError(err, 'Couldn’t load your profile. Please try again.')); setLoadingFailed(true) })
   }, [refresh])
 
@@ -110,53 +119,19 @@ export default function ProfilePage() {
       <NavBar />
 
       <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
-        {pushAvailable && (
-          <section className="rounded-lg border border-ink-border p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-display text-paper">Phone reminders</p>
-                <p className="mt-1 text-sm text-mute">Get a reminder even when RealPathFlow is closed.</p>
-              </div>
-              <button
-                disabled={pushBusy}
-                onClick={async () => {
-                  setPushBusy(true)
-                  try {
-                    const config = await getPushConfig()
-                    if (!config.public_key) throw new Error('Push notifications are not configured yet.')
-                    if (pushEnabled) { await disablePushNotifications(); setPushEnabled(false) }
-                    else { await enablePushNotifications(config.public_key); setPushEnabled(true) }
-                  } catch (err) { setError(friendlyError(err, 'Couldn’t update phone reminders. Please try again.')) }
-                  finally { setPushBusy(false) }
-                }}
-                className="rounded-md border border-ink-border px-4 py-2 text-sm text-paper transition-colors hover:border-flow disabled:opacity-50"
-              >
-                {pushBusy ? 'Updating…' : pushEnabled ? 'Turn off reminders' : 'Enable reminders'}
-              </button>
-            </div>
-          </section>
-        )}
-
-        {username && (
-          <section className="rounded-lg border border-ink-border p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-display text-paper">Your public profile</p>
-                <p className="mt-1 text-sm text-mute">Only tasks you explicitly mark public are shown.</p>
-              </div>
-              <a
-                href={`/u/${encodeURIComponent(username)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-md border border-ink-border px-4 py-2 text-center text-sm text-paper hover:border-flow"
-              >
-                View public profile
-              </a>
-            </div>
-          </section>
-        )}
-
-        <ProfileHistoryHeatmap />
+        <section className="flex flex-col items-center gap-3 rounded-lg border border-ink-border p-6 text-center sm:flex-row sm:text-left">
+          <AvatarBadge label={me?.profile?.username ?? me?.email} avatarUrl={me?.profile?.avatar_url} size="lg" />
+          <div className="flex-1">
+            <p className="font-display text-lg text-paper">{me?.profile?.username ?? me?.email ?? 'Your profile'}</p>
+            {me?.profile?.full_name && <p className="text-sm text-mute">{me.profile.full_name}</p>}
+          </div>
+          <button
+            onClick={() => setShowEditModal(true)}
+            className="rounded-md border border-ink-border px-4 py-2 text-sm text-paper transition-colors hover:border-flow"
+          >
+            Edit profile
+          </button>
+        </section>
 
         <section className="rounded-lg border border-ink-border p-6 text-center">
           <p className="text-sm text-mute">Total hours of progression</p>
@@ -200,7 +175,73 @@ export default function ProfilePage() {
             No tasks yet. Add one from the Today page.
           </p>
         )}
+
+        <ProfileHistoryHeatmap />
+
+        {me?.profile?.username && (
+          <section className="rounded-lg border border-ink-border p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-display text-paper">Your public profile</p>
+                <p className="mt-1 text-sm text-mute">Only fields you've marked public are shown.</p>
+              </div>
+              <a
+                href={`/u/${encodeURIComponent(me.profile.username)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-md border border-ink-border px-4 py-2 text-center text-sm text-paper hover:border-flow"
+              >
+                View public profile
+              </a>
+            </div>
+          </section>
+        )}
+
+        {pushAvailable && (
+          <section className="rounded-lg border border-ink-border p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-display text-paper">Phone reminders</p>
+                <p className="mt-1 text-sm text-mute">Get a reminder even when RealPathFlow is closed.</p>
+              </div>
+              <button
+                disabled={pushBusy}
+                onClick={async () => {
+                  setPushBusy(true)
+                  try {
+                    const config = await getPushConfig()
+                    if (!config.public_key) throw new Error('Push notifications are not configured yet.')
+                    if (pushEnabled) { await disablePushNotifications(); setPushEnabled(false) }
+                    else { await enablePushNotifications(config.public_key); setPushEnabled(true) }
+                  } catch (err) { setError(friendlyError(err, 'Couldn’t update phone reminders. Please try again.')) }
+                  finally { setPushBusy(false) }
+                }}
+                className="rounded-md border border-ink-border px-4 py-2 text-sm text-paper transition-colors hover:border-flow disabled:opacity-50"
+              >
+                {pushBusy ? 'Updating…' : pushEnabled ? 'Turn off reminders' : 'Enable reminders'}
+              </button>
+            </div>
+          </section>
+        )}
       </main>
+
+      <AnimatePresence>
+        {showEditModal && me && (
+          <ProfileEditModal
+            me={me}
+            onClose={() => setShowEditModal(false)}
+            onSaved={(updated) => {
+              setMe(updated)
+              invalidateCurrentUserProfileCache()
+              setShowEditModal(false)
+            }}
+            onAvatarChanged={(updated) => {
+              setMe(updated)
+              invalidateCurrentUserProfileCache()
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

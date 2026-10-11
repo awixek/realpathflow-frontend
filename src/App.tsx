@@ -2,9 +2,11 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute'
 import PublicOnlyRoute from './components/PublicOnlyRoute'
 import InstallPrompt from './components/InstallPrompt'
+import CelebrationToast from './components/CelebrationToast'
 import DashboardPage from './pages/DashboardPage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
+import SearchPage from './pages/SearchPage'
 import PublicProfilePage from './pages/PublicProfilePage'
 import { ActiveSessionProvider } from './lib/ActiveSessionContext'
 
@@ -38,8 +40,17 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/search"
+            element={
+              <ProtectedRoute>
+                <SearchPage />
+              </ProtectedRoute>
+            }
+          />
         </Routes>
         <InstallPrompt />
+        <CelebrationToast />
       </BrowserRouter>
     </ActiveSessionProvider>
   )

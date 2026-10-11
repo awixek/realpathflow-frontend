@@ -25,6 +25,13 @@ export interface Task {
 
 export type SessionStatus = 'ACTIVE' | 'PAUSED' | 'COMPLETED'
 
+/** Set only on the response that announces a server-side auto-stop -
+ * 'target_reached' means today's daily target for that task was hit
+ * (celebrate), 'stale_timeout' means the timer had been running
+ * untouched for too long and was closed as a safety net (quiet notice,
+ * no celebration). */
+export type AutoStopReason = 'target_reached' | 'stale_timeout' | null
+
 export interface TaskSession {
   id: string
   task_id: string
@@ -35,6 +42,7 @@ export interface TaskSession {
   completed_at: string | null
   accumulated_seconds: number
   elapsed_seconds: number
+  auto_stop_reason?: AutoStopReason
 }
 
 export interface DailyTaskBreakdown {
@@ -98,8 +106,24 @@ export interface PublicTask {
   created_at: string | null
 }
 
+export interface PublicSocialHandle {
+  platform: string
+  value: string
+}
+
 export interface PublicProfile {
   username: string
+  avatar_url: string | null
   full_name: string | null
+  location: string | null
+  social_handles: PublicSocialHandle[]
+  total_progress_seconds: number | null
   tasks: PublicTask[]
+}
+
+export interface SearchResult {
+  username: string
+  avatar_url: string | null
+  full_name: string | null
+  matched_subject: string | null
 }
