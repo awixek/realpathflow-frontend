@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ProfileSkeleton } from '../components/LoadingState'
+import AvatarBadge from '../components/AvatarBadge'
 import { getPublicProfile } from '../lib/publicProfileApi'
 import { friendlyError } from '../lib/errorMessages'
 import { PublicProfile, PublicTask } from '../types'
-import { minutesToLabel } from '../lib/time'
+import { formatHoursMinutes, minutesToLabel } from '../lib/time'
 
 function PublicTaskCard({ task }: { task: PublicTask }) {
   const statusLabel = task.status.charAt(0).toUpperCase() + task.status.slice(1)
@@ -69,18 +70,50 @@ export default function PublicProfilePage() {
   return (
     <main className="min-h-screen bg-ink px-6 py-10">
       <div className="mx-auto flex max-w-3xl flex-col gap-8">
-        <header className="border-b border-ink-border pb-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-flow">RealPathFlow</p>
-          <h1 className="mt-2 font-display text-3xl text-paper">
-            {profile.full_name || `@${profile.username}`}
-          </h1>
-          <p className="mt-1 text-sm text-mute">@{profile.username}</p>
-          <p className="mt-4 text-sm text-mute">Public tasks</p>
+        <header className="flex items-center gap-4 border-b border-ink-border pb-6">
+          <AvatarBadge label={profile.full_name ?? profile.username} avatarUrl={profile.avatar_url} size="lg" />
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-flow">RealPathFlow</p>
+            <h1 className="mt-1 font-display text-2xl text-paper">
+              {profile.full_name || `@${profile.username}`}
+            </h1>
+            <p className="mt-1 text-sm text-mute">
+              @{profile.username}
+              {profile.location && <span> · {profile.location}</span>}
+            </p>
+          </div>
         </header>
 
-        <section className="grid gap-4">
-          {profile.tasks.map((task) => <PublicTaskCard key={task.id} task={task} />)}
-        </section>
+        {profile.social_handles.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {profile.social_handles.map((handle, i) => (
+              <span
+                key={i}
+                className="rounded-full border border-ink-border px-3 py-1 text-xs text-paper/80"
+              >
+                {handle.platform}: {handle.value}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {profile.total_progress_seconds !== null && (
+          <section className="rounded-lg border border-ink-border p-6 text-center">
+            <p className="text-sm text-mute">Total hours of progression</p>
+            <p className="mt-1 font-display text-3xl text-flow">
+              {formatHoursMinutes(profile.total_progress_seconds)}
+            </p>
+          </section>
+        )}
+
+        {profile.tasks.length > 0 && (
+          <section className="flex flex-col gap-4">
+            <p className="text-sm text-mute">Public tasks</p>
+            <div className="grid gap-4">
+              {profile.tasks.map((task) => <PublicTaskCard key={task.id} task={task} />)}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   )

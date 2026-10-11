@@ -18,5 +18,15 @@ export function friendlyError(error: unknown, fallback = 'Something went wrong. 
     return 'Couldn’t reach RealPathFlow. Check your internet connection and try again.'
   }
 
+  // A plain Error we threw ourselves (not a raw network/stack-trace
+  // message) is usually already written for a person to read - e.g.
+  // "Push notifications are not supported or permission was denied."
+  // Surfacing it beats hiding the real reason behind a generic fallback,
+  // which made problems like the phone-reminders toggle failing
+  // impossible to diagnose from the UI alone.
+  if (error instanceof Error && error.message && error.message.length < 200) {
+    return error.message
+  }
+
   return fallback
 }
