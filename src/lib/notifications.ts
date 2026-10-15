@@ -37,7 +37,7 @@ export async function closeProgressNotification() {
   registration?.active?.postMessage({ type: 'CLOSE_PROGRESS_NOTIFICATION' })
 }
 
-export type NotificationAction = 'toggle-pause' | 'complete-session'
+export type NotificationAction = 'toggle-pause'
 
 /** Fires when the person taps an action button on the notification. Returns an unsubscribe function. */
 export function onNotificationAction(handler: (action: NotificationAction) => void): () => void {

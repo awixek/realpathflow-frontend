@@ -17,14 +17,16 @@ export default function NavBar() {
         </svg>
       </button>
 
-      <motion.span
+      <motion.div
         initial={{ opacity: 0, x: -6 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.4 }}
-        className="font-display text-lg text-paper"
+        className="flex items-center gap-2.5"
+        aria-label="RealPathFlow"
       >
-        RealPathFlow
-      </motion.span>
+        <img src="/realpathflow-mark.png" alt="" className="h-8 w-8 object-contain" />
+        <span className="font-display text-lg font-semibold tracking-tight text-paper">RealPathFlow</span>
+      </motion.div>
 
       <NavDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
     </nav>

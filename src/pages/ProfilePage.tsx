@@ -37,11 +37,10 @@ function Section({ title, tasks, onDelete, onTogglePublic }: {
             key={task.id}
             task={task}
             activeSession={null}
-            liveElapsedSeconds={0}
             onStart={() => {}}
             onPause={() => {}}
             onResume={() => {}}
-            onComplete={() => {}}
+            showTimerControls={false}
             onDelete={onDelete}
             onTogglePublic={onTogglePublic}
             busy={false}

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import AddTaskModal from '../components/AddTaskModal'
 import DayProgressBox from '../components/DayProgressBox'
@@ -6,7 +6,7 @@ import { DashboardSkeleton } from '../components/LoadingState'
 import NavBar from '../components/NavBar'
 import SessionBar from '../components/SessionBar'
 import TaskCard from '../components/TaskCard'
-import { formatHoursMinutes } from '../lib/time'
+import { formatHoursMinutes, todayIso } from '../lib/time'
 import { createTask, deleteTask, listTasks, TaskDraft, updateTask } from '../lib/tasksApi'
 import { getDailyProgress } from '../lib/profileApi'
 import { useActiveSession } from '../lib/ActiveSessionContext'
@@ -16,6 +16,7 @@ import { friendlyError } from '../lib/errorMessages'
 export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [daily, setDaily] = useState<DailyProgress | null>(null)
+  const [dailySnapshotAt, setDailySnapshotAt] = useState(Date.now())
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loadingFailed, setLoadingFailed] = useState(false)
@@ -23,11 +24,13 @@ export default function DashboardPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null)
 
   const session = useActiveSession()
+  const previousSessionId = useRef<string | null | undefined>(undefined)
 
   const refresh = useCallback(async () => {
     const [taskList, dailyProgress] = await Promise.all([listTasks(), getDailyProgress()])
     setTasks(taskList)
     setDaily(dailyProgress)
+    setDailySnapshotAt(Date.now())
   }, [])
 
   useEffect(() => {
@@ -35,6 +38,36 @@ export default function DashboardPage() {
       setError(friendlyError(err, 'Couldn’t load your tasks. Please try again.'))
       setLoadingFailed(true)
     })
+  }, [refresh])
+
+  // Reconcile daily totals when a server-side auto-stop clears the timer.
+  // Without this refresh, the last client-only live increment could disappear
+  // from the visible per-task percentage until the next manual refresh.
+  useEffect(() => {
+    const currentId = session.activeSession?.id ?? null
+    const previousId = previousSessionId.current
+    previousSessionId.current = currentId
+    if (previousId && !currentId) {
+      refresh().catch((err) => setError(friendlyError(err, 'Couldn’t refresh today’s progress.')))
+    }
+  }, [session.activeSession?.id, refresh])
+
+  // Refresh daily totals at India midnight so the visible percentage rolls
+  // over with the same calendar boundary used by the backend history ledger.
+  useEffect(() => {
+    let lastIstDate = todayIso()
+    const checkIstDate = () => {
+      const currentIstDate = todayIso()
+      if (currentIstDate === lastIstDate) return
+      lastIstDate = currentIstDate
+      refresh().catch((err) => setError(friendlyError(err, 'Couldn’t refresh today’s progress.')))
+    }
+    const timer = window.setInterval(checkIstDate, 15000)
+    window.addEventListener('focus', checkIstDate)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', checkIstDate)
+    }
   }, [refresh])
 
   const ongoingTasks = useMemo(() => (tasks ?? []).filter((t) => t.status === 'ongoing'), [tasks])
@@ -71,11 +104,6 @@ export default function DashboardPage() {
 
   async function handleResume() {
     await session.resume()
-    await refresh()
-  }
-
-  async function handleComplete() {
-    await session.complete()
     await refresh()
   }
 
@@ -125,10 +153,10 @@ export default function DashboardPage() {
           <SessionBar
             session={session.activeSession}
             task={activeTask}
-            liveElapsedSeconds={session.liveElapsedSeconds}
+            loggedSecondsToday={daily?.tasks?.find((item) => item.task_id === session.activeTaskId)?.logged_seconds ?? 0}
+            dailySnapshotAt={dailySnapshotAt}
             onPause={handlePause}
             onResume={handleResume}
-            onComplete={handleComplete}
             busy={isBusy}
           />
         )}
@@ -186,11 +214,11 @@ export default function DashboardPage() {
                   key={task.id}
                   task={task}
                   activeSession={session.activeSession}
-                  liveElapsedSeconds={session.liveElapsedSeconds}
+                  loggedSecondsToday={daily?.tasks?.find((item) => item.task_id === task.id)?.logged_seconds ?? 0}
+                  dailySnapshotAt={dailySnapshotAt}
                   onStart={handleStart}
                   onPause={handlePause}
                   onResume={handleResume}
-                  onComplete={handleComplete}
                   onEdit={setEditingTask}
                   onDelete={handleDelete}
                   busy={isBusy}

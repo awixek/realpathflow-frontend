@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { Task, TaskSession } from '../types'
-import { formatClock, formatHoursMinutes, minutesToLabel, weekdayLabel } from '../lib/time'
+import { formatHoursMinutes, minutesToLabel, weekdayLabel } from '../lib/time'
 
 const STATUS_LABEL: Record<Task['status'], string> = {
   upcoming: 'Starts soon',
@@ -31,33 +31,43 @@ function frequencySummary(task: Task): string | null {
 export default function TaskCard({
   task,
   activeSession,
-  liveElapsedSeconds,
+  loggedSecondsToday = 0,
+  dailySnapshotAt = Date.now(),
   onStart,
   onPause,
   onResume,
-  onComplete,
   onTogglePublic,
   onEdit,
   onDelete,
+  showTimerControls = true,
   busy
 }: {
   task: Task
   activeSession: TaskSession | null
-  liveElapsedSeconds: number
+  loggedSecondsToday?: number
+  dailySnapshotAt?: number
   onStart: (taskId: string) => void
   onPause: () => void
   onResume: () => void
-  onComplete: () => void
   onTogglePublic?: (task: Task) => void
   onEdit?: (task: Task) => void
   onDelete?: (task: Task) => void
+  showTimerControls?: boolean
   busy: boolean
 }) {
   const isThisTaskActive = activeSession?.task_id === task.id
   const isPaused = isThisTaskActive && activeSession?.status === 'PAUSED'
   const isRunning = isThisTaskActive && activeSession?.status === 'ACTIVE'
-  const someOtherTaskRunning = activeSession != null && !isThisTaskActive
+  const someOtherTaskRunning = activeSession?.status === 'ACTIVE' && !isThisTaskActive
   const freqNote = frequencySummary(task)
+  const targetSeconds = task.daily_minutes * 60
+  const secondsToday = Math.max(
+    0,
+    loggedSecondsToday + (isRunning ? Math.floor(Math.max(0, Date.now() - dailySnapshotAt) / 1000) : 0)
+  )
+  const progressPercent = targetSeconds > 0
+    ? Math.min(100, Math.floor((secondsToday / targetSeconds) * 100))
+    : 0
 
   return (
     <motion.div
@@ -84,59 +94,54 @@ export default function TaskCard({
         {task.is_public && <span className="text-flow">Public</span>}
       </div>
 
-      {task.status === 'ongoing' && (
-        <div className="flex flex-wrap items-center gap-2">
-          {isRunning && (
-            <span className="font-mono text-sm text-flow">{formatClock(liveElapsedSeconds)}</span>
-          )}
-          {!isThisTaskActive && !someOtherTaskRunning && (
-            <button
-              disabled={busy}
-              onClick={() => onStart(task.id)}
-              className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow transition-colors hover:bg-flow hover:text-ink disabled:opacity-50"
-            >
-              Start
-            </button>
-          )}
-          {isRunning && (
-            <>
-              <button
-                disabled={busy}
-                onClick={() => onPause()}
-                className="rounded-md border border-ink-border px-3 py-1.5 text-sm text-paper hover:border-flow disabled:opacity-50"
-              >
-                Pause
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => onComplete()}
-                className="rounded-md bg-flow px-3 py-1.5 text-sm font-medium text-ink hover:bg-flow/90 disabled:opacity-50"
-              >
-                Stop
-              </button>
-            </>
-          )}
-          {isPaused && (
-            <>
-              <button
-                disabled={busy}
-                onClick={() => onResume()}
-                className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow hover:bg-flow hover:text-ink disabled:opacity-50"
-              >
-                Resume
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => onComplete()}
-                className="rounded-md border border-ink-border px-3 py-1.5 text-sm text-paper hover:border-flow disabled:opacity-50"
-              >
-                Stop
-              </button>
-            </>
-          )}
-          {someOtherTaskRunning && (
-            <span className="text-xs text-mute">Finish the running timer first</span>
-          )}
+      {task.status === 'ongoing' && showTimerControls && (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-mute">
+              Today: <span className="font-mono text-paper">{formatHoursMinutes(secondsToday)}</span>
+              {' / '}{formatHoursMinutes(targetSeconds)}
+              <span className="ml-2 font-semibold text-flow">{progressPercent}%</span>
+            </span>
+            <div className="flex items-center gap-2">
+              {!isThisTaskActive && (
+                <button
+                  disabled={busy}
+                  onClick={() => onStart(task.id)}
+                  className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow transition-colors hover:bg-flow hover:text-ink disabled:opacity-50"
+                >
+                  {someOtherTaskRunning ? 'Switch to task' : 'Start'}
+                </button>
+              )}
+              {isRunning && (
+                <button
+                  disabled={busy}
+                  onClick={onPause}
+                  className="rounded-md border border-ink-border px-3 py-1.5 text-sm text-paper hover:border-flow disabled:opacity-50"
+                >
+                  Pause
+                </button>
+              )}
+              {isPaused && (
+                <button
+                  disabled={busy}
+                  onClick={onResume}
+                  className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow hover:bg-flow hover:text-ink disabled:opacity-50"
+                >
+                  Resume
+                </button>
+              )}
+            </div>
+          </div>
+          <div
+            className="h-1.5 overflow-hidden rounded-full bg-ink-panel"
+            role="progressbar"
+            aria-label={`${task.name} daily goal progress`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPercent}
+          >
+            <div className="h-full rounded-full bg-flow transition-[width] duration-300" style={{ width: `${progressPercent}%` }} />
+          </div>
         </div>
       )}
 

@@ -89,7 +89,10 @@ export default function LoginPage() {
       {/* Form side */}
       <div className="flex flex-1 items-center justify-center px-8 py-16">
         <div className="w-full max-w-sm">
-          <h1 className="font-display text-3xl text-paper">RealPathFlow</h1>
+          <div className="flex items-center gap-3">
+            <img src="/realpathflow-mark.png" alt="" className="h-10 w-10 object-contain" />
+            <h1 className="font-display text-3xl font-semibold tracking-tight text-paper">RealPathFlow</h1>
+          </div>
           <p className="mt-2 text-sm text-mute">
             {mode === 'signin' ? 'Sign in to pick up where you left off.' : 'Create an account to start tracking your tasks.'}
           </p>

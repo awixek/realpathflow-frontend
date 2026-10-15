@@ -18,7 +18,7 @@ npm run dev
 
 - `src/pages/LoginPage.tsx` — sign in / sign up (email+password and Google), unchanged from v2
 - `src/pages/DashboardPage.tsx` ("Today") — today's required-vs-logged progress box, a sticky timer bar while a
-  session is running, and cards for every ongoing task with Start/Pause/Resume/Stop
+  session is running, and cards for every ongoing task with Start/Pause/Resume
 - `src/pages/ProfilePage.tsx` — total hours of progression, and Ongoing/Upcoming/Completed task lists with a
   public/private toggle and delete
 - `src/components/AddTaskModal.tsx` — the "add task" form: name, subject, start/end date, daily time, and an
@@ -29,7 +29,7 @@ npm run dev
 - `src/components/SessionBar.tsx` — sticky top bar for the one timer that can be running at a time
 - `src/components/DayProgressBox.tsx`, `LiquidVessel.tsx`, `NavBar.tsx`, `LoadingState.tsx`,
   `ProtectedRoute`/`PublicOnlyRoute` — carried over from v2 unchanged
-- `src/lib/tasksApi.ts` — CRUD for tasks + start/pause/resume/complete/active-session calls
+- `src/lib/tasksApi.ts` — CRUD for tasks and timer-session API calls; the interface intentionally exposes Pause/Resume rather than a manual Stop action
 - `src/lib/profileApi.ts` — `/api/v1/daily` and `/api/v1/profile`
 - `src/lib/time.ts` — duration/date formatting shared by the components above
 - `src/lib/supabase.ts`, `useAuth.ts`, `api.ts` — unchanged auth/session plumbing

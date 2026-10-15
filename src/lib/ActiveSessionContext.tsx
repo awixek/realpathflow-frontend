@@ -1,7 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useAuth } from './useAuth'
 import {
-  completeSession,
   getActiveSession,
   getTask,
   pauseSession,
@@ -40,8 +39,6 @@ interface ActiveSessionContextValue {
   start: (task: Task) => Promise<void>
   pause: () => Promise<void>
   resume: () => Promise<void>
-  /** Resolves once the session is marked complete; the caller is responsible for refreshing its own task/daily data. */
-  complete: () => Promise<void>
   /** Re-pulls the active session from the server - useful after task list changes elsewhere. */
   refresh: () => Promise<void>
 }
@@ -178,6 +175,13 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
           applySession(null)
           setActiveTaskName(null)
           setActiveTaskDailyMinutes(null)
+        } else if (activeSession && s.id !== activeSession.id) {
+          // Another tab/device switched or paused a task. Reconcile this timer
+          // with the server rather than letting the old client clock drift.
+          const task = await getTask(s.task_id).catch(() => null)
+          applySession(s)
+          setActiveTaskName(task?.name ?? null)
+          setActiveTaskDailyMinutes(task?.daily_minutes ?? null)
         }
       } catch {
         // Transient network hiccup - try again on the next resync tick.
@@ -218,6 +222,13 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
       await requestNotificationPermission()
       await withBusy(async () => {
         const s = await startSession(task.id)
+        if (s.status === 'COMPLETED' || s.auto_stop_reason) {
+          if (s.auto_stop_reason === 'target_reached') setCelebration({ taskName: task.name })
+          applySession(null)
+          setActiveTaskName(null)
+          setActiveTaskDailyMinutes(null)
+          return
+        }
         applySession(s)
         setActiveTaskName(task.name)
         setActiveTaskDailyMinutes(task.daily_minutes)
@@ -244,38 +255,18 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
     })
   }, [applySession])
 
-  const complete = useCallback(async () => {
-    const current = activeSessionRef.current
-    if (!current) return
-    const finishedTaskName = activeTaskName
-    await withBusy(async () => {
-      await completeSession(current.id)
-      playSubtaskChime()
-      showTaskCompletionNotification(
-        'Session logged',
-        finishedTaskName ? `Nice work on "${finishedTaskName}" — your time has been recorded.` : 'Your time has been recorded.'
-      )
-      applySession(null)
-      setActiveTaskName(null)
-      setActiveTaskDailyMinutes(null)
-    })
-  }, [applySession, activeTaskName])
-
-  // Let the notification's own Pause/Resume/Stop buttons drive the same
-  // actions as the in-app controls, so a task can be paused/resumed/stopped
-  // without ever opening the app.
+  // Let the notification's Pause/Resume action drive the same timer state
+  // as the in-app control without introducing a separate stop/complete action.
   useEffect(() => {
     const unsubscribe = onNotificationAction((action) => {
       if (!activeSessionRef.current) return
       if (action === 'toggle-pause') {
         if (activeSessionRef.current.status === 'ACTIVE') pause()
         else resume()
-      } else if (action === 'complete-session') {
-        complete()
       }
     })
     return unsubscribe
-  }, [pause, resume, complete])
+  }, [pause, resume])
 
   const value: ActiveSessionContextValue = {
     activeSession,
@@ -289,7 +280,6 @@ export function ActiveSessionProvider({ children }: { children: ReactNode }) {
     start,
     pause,
     resume,
-    complete,
     refresh
   }
 
