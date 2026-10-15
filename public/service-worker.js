@@ -1,6 +1,6 @@
 // Minimal service worker: no offline caching, just powers the
-// active-task notification and its action buttons (Pause/Resume,
-// Complete step). Everything about the task itself lives in the page;
+// active-task notification and its Pause/Resume action.
+// Everything about the task itself lives in the page;
 // this worker only shows/updates the notification and relays clicks.
 
 const TAG = 'realpathflow-active-task'
@@ -27,8 +27,7 @@ self.addEventListener('message', (event) => {
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       actions: [
-        { action: 'toggle-pause', title: isPaused ? '▶ Resume' : '⏸ Pause' },
-        { action: 'complete-session', title: '■ Stop' }
+        { action: 'toggle-pause', title: isPaused ? '▶ Resume' : '⏸ Pause' }
       ],
       data: { isPaused }
     })
@@ -57,7 +56,7 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      if (action === 'toggle-pause' || action === 'complete-session') {
+      if (action === 'toggle-pause') {
         clients.forEach((client) => client.postMessage({ type: 'NOTIFICATION_ACTION', action }))
         return
       }

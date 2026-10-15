@@ -20,8 +20,10 @@ report a CORS/`Failed to fetch` error.
 ## 2. What each screen does now
 
 - **Today** (`/`) — the day's required-vs-logged time as a green box,
-  a sticky bar for the one session that can be running, and every
-  ongoing task as a card with Start/Pause/Resume/Stop. "+ Add task"
+  a sticky timer bar with today's duration and goal percentage, and each
+  ongoing task's own daily progress. Start on another task automatically
+  pauses the previous timer; there is no manual Stop button. Daily figures
+  roll over at India midnight. "+ Add task"
   opens the form: name, subject, start/end date, daily hours+minutes,
   and an optional Frequency section (Weekly weekday exclusions /
   Monthly day-of-month exclusions / Manual calendar-picked dates).
