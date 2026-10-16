@@ -1,12 +1,11 @@
-// Minimal service worker: no offline caching, just powers the
-// active-task notification and its Pause/Resume action.
-// Everything about the task itself lives in the page;
-// this worker only shows/updates the notification and relays clicks.
+// Minimal service worker for active-task timer controls and user-requested push reminders.
+// Timer data remains server-authoritative; this worker only presents actions and relays clicks.
 
-const TAG = 'realpathflow-active-task'
+const ACTIVE_TASK_TAG = 'realpathflow-active-task'
+const COMPLETION_TAG = 'realpathflow-task-complete'
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting()
+  event.waitUntil(self.skipWaiting())
 })
 
 self.addEventListener('activate', (event) => {
@@ -18,55 +17,91 @@ self.addEventListener('message', (event) => {
   if (!msg) return
 
   if (msg.type === 'SHOW_PROGRESS_NOTIFICATION') {
-    const { title, body, isPaused } = msg.payload
-    self.registration.showNotification(title, {
-      body,
-      tag: TAG,
+    const { title, body, isPaused, taskId } = msg.payload || {}
+    event.waitUntil(self.registration.showNotification(title || 'RealPathFlow', {
+      body: body || 'Your task timer is active.',
+      tag: ACTIVE_TASK_TAG,
       renotify: false,
       silent: true,
       icon: '/icons/icon-192.png',
       badge: '/icons/icon-192.png',
       actions: [
-        { action: 'toggle-pause', title: isPaused ? '▶ Resume' : '⏸ Pause' }
+        { action: 'toggle-pause', title: isPaused ? '▶ Resume' : '⏸ Pause' },
+        { action: 'show-progress', title: 'Progress' }
       ],
-      data: { isPaused }
-    })
+      data: { isPaused: Boolean(isPaused), taskId: taskId || null, url: '/' }
+    }))
   }
 
   if (msg.type === 'SHOW_COMPLETION_NOTIFICATION') {
-    const { title, body } = msg.payload
-    self.registration.showNotification(title, {
-      body,
-      tag: 'realpathflow-task-complete',
+    const { title, body, nextTaskId, nextTaskName } = msg.payload || {}
+    const actions = nextTaskId
+      ? [
+          { action: 'start-next', title: `▶ Start ${nextTaskName || 'next task'}` },
+          { action: 'show-progress', title: 'Progress' }
+        ]
+      : [{ action: 'show-progress', title: 'Progress' }]
+    event.waitUntil(self.registration.showNotification(title || 'Task complete 🎉', {
+      body: body || 'Your daily target is complete.',
+      tag: COMPLETION_TAG,
       renotify: true,
       silent: false,
       icon: '/icons/icon-192.png',
-      badge: '/icons/icon-192.png'
-    })
+      badge: '/icons/icon-192.png',
+      actions,
+      data: { nextTaskId: nextTaskId || null, nextTaskName: nextTaskName || null, url: '/' }
+    }))
   }
 
   if (msg.type === 'CLOSE_PROGRESS_NOTIFICATION') {
-    self.registration.getNotifications({ tag: TAG }).then((list) => list.forEach((n) => n.close()))
+    event.waitUntil(self.registration.getNotifications({ tag: ACTIVE_TASK_TAG }).then((items) => {
+      items.forEach((notification) => notification.close())
+    }))
   }
 })
 
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-  const action = event.action // '' if the body was tapped, not a button
+  const notification = event.notification
+  const action = event.action // '' if the notification body was tapped
+  const data = notification.data || {}
+  notification.close()
 
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      if (action === 'toggle-pause') {
-        clients.forEach((client) => client.postMessage({ type: 'NOTIFICATION_ACTION', action }))
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+
+    if (action === 'toggle-pause') {
+      if (clients.length > 0) {
+        await clients[0].focus()
+        clients[0].postMessage({ type: 'NOTIFICATION_ACTION', action: 'toggle-pause' })
         return
       }
-      // Tapped the notification body (no action): just bring the app to front.
-      if (clients.length > 0) {
-        return clients[0].focus()
+      await self.clients.openWindow('/?notificationAction=toggle-pause')
+      return
+    }
+
+    if (action === 'start-next') {
+      const taskId = data.nextTaskId
+      if (!taskId) {
+        if (clients.length > 0) return clients[0].focus()
+        return self.clients.openWindow('/')
       }
-      return self.clients.openWindow('/?notificationAction=' + encodeURIComponent(action || 'open'))
-    })
-  )
+      const url = `/?notificationAction=start-next&taskId=${encodeURIComponent(taskId)}`
+      if (clients.length > 0) {
+        const client = clients[0]
+        const navigated = typeof client.navigate === 'function' ? await client.navigate(url) : client
+        return (navigated || client).focus()
+      }
+      return self.clients.openWindow(url)
+    }
+
+    // Progress or body click opens the dashboard with the most current timer state.
+    if (clients.length > 0) {
+      const client = clients[0]
+      const navigated = typeof client.navigate === 'function' ? await client.navigate('/') : client
+      return (navigated || client).focus()
+    }
+    return self.clients.openWindow('/')
+  })())
 })
 
 // Real Web Push delivery. The server sends a standard push payload; the
@@ -79,9 +114,10 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(title, {
     body,
     tag: payload.tag || 'realpathflow-reminder',
-    renotify: true,
+    renotify: false,
+    silent: false,
     icon: '/icons/icon-192.png',
     badge: '/icons/icon-192.png',
-    data: { url: payload.url || '/' },
+    data: { url: payload.url || '/' }
   }))
 })

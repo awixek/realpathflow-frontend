@@ -52,6 +52,14 @@ export default function DashboardPage() {
     }
   }, [session.activeSession?.id, refresh])
 
+  // A target can be detected during the very first session restore, before a
+  // previous activeSession ID exists. Refreshing on the celebration also makes
+  // that first-load path update the visible daily totals after server auto-stop.
+  useEffect(() => {
+    if (!session.celebration) return
+    refresh().catch((err) => setError(friendlyError(err, 'Couldn’t refresh today’s progress.')))
+  }, [session.celebration, refresh])
+
   // Refresh daily totals at India midnight so the visible percentage rolls
   // over with the same calendar boundary used by the backend history ledger.
   useEffect(() => {
@@ -153,7 +161,7 @@ export default function DashboardPage() {
           <SessionBar
             session={session.activeSession}
             task={activeTask}
-            loggedSecondsToday={daily?.tasks?.find((item) => item.task_id === session.activeTaskId)?.logged_seconds ?? 0}
+            loggedSecondsToday={daily.tasks.find((item) => item.task_id === session.activeTaskId)?.logged_seconds ?? 0}
             dailySnapshotAt={dailySnapshotAt}
             onPause={handlePause}
             onResume={handleResume}
@@ -214,7 +222,7 @@ export default function DashboardPage() {
                   key={task.id}
                   task={task}
                   activeSession={session.activeSession}
-                  loggedSecondsToday={daily?.tasks?.find((item) => item.task_id === task.id)?.logged_seconds ?? 0}
+                  loggedSecondsToday={daily.tasks.find((item) => item.task_id === task.id)?.logged_seconds ?? 0}
                   dailySnapshotAt={dailySnapshotAt}
                   onStart={handleStart}
                   onPause={handlePause}

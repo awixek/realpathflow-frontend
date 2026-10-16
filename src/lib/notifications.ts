@@ -11,6 +11,17 @@ export function registerServiceWorker(): Promise<ServiceWorkerRegistration | nul
   return registrationPromise
 }
 
+async function getActiveWorker(): Promise<ServiceWorker | null> {
+  const registration = await registerServiceWorker()
+  if (!registration) return null
+  try {
+    const ready = await navigator.serviceWorker.ready
+    return ready.active ?? registration.active ?? registration.waiting ?? registration.installing
+  } catch {
+    return registration.active ?? registration.waiting ?? registration.installing
+  }
+}
+
 /** Must be called from a user gesture (e.g. a click handler) - browsers block silent permission prompts. */
 export async function requestNotificationPermission(): Promise<boolean> {
   if (!('Notification' in window)) return false
@@ -20,31 +31,56 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return result === 'granted'
 }
 
-export async function showProgressNotification(title: string, body: string, isPaused: boolean) {
+export async function showProgressNotification(
+  title: string,
+  body: string,
+  isPaused: boolean,
+  taskId?: string
+) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return
-  const registration = await registerServiceWorker()
-  registration?.active?.postMessage({ type: 'SHOW_PROGRESS_NOTIFICATION', payload: { title, body, isPaused } })
+  const worker = await getActiveWorker()
+  worker?.postMessage({
+    type: 'SHOW_PROGRESS_NOTIFICATION',
+    payload: { title, body, isPaused, taskId }
+  })
 }
 
-export async function showTaskCompletionNotification(title: string, body: string) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return
-  const registration = await registerServiceWorker()
-  registration?.active?.postMessage({ type: "SHOW_COMPLETION_NOTIFICATION", payload: { title, body } })
+export interface NextTaskNotificationAction {
+  id: string
+  name: string
+}
+
+export async function showTaskCompletionNotification(
+  title: string,
+  body: string,
+  nextTask?: NextTaskNotificationAction
+) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  const worker = await getActiveWorker()
+  worker?.postMessage({
+    type: 'SHOW_COMPLETION_NOTIFICATION',
+    payload: {
+      title,
+      body,
+      nextTaskId: nextTask?.id,
+      nextTaskName: nextTask?.name
+    }
+  })
 }
 
 export async function closeProgressNotification() {
-  const registration = await registerServiceWorker()
-  registration?.active?.postMessage({ type: 'CLOSE_PROGRESS_NOTIFICATION' })
+  const worker = await getActiveWorker()
+  worker?.postMessage({ type: 'CLOSE_PROGRESS_NOTIFICATION' })
 }
 
-export type NotificationAction = 'toggle-pause'
+export type NotificationAction = 'toggle-pause' | 'show-progress' | 'start-next'
 
-/** Fires when the person taps an action button on the notification. Returns an unsubscribe function. */
-export function onNotificationAction(handler: (action: NotificationAction) => void): () => void {
+/** Fires when a notification action is clicked in a currently open app tab. */
+export function onNotificationAction(handler: (action: NotificationAction, taskId?: string) => void): () => void {
   if (!('serviceWorker' in navigator)) return () => {}
   const listener = (event: MessageEvent) => {
     if (event.data?.type === 'NOTIFICATION_ACTION') {
-      handler(event.data.action)
+      handler(event.data.action, event.data.taskId)
     }
   }
   navigator.serviceWorker.addEventListener('message', listener)
@@ -64,9 +100,10 @@ export async function subscribeToPush(publicKey: string): Promise<PushSubscripti
   if (!registration) return null
   const permissionGranted = await requestNotificationPermission()
   if (!permissionGranted) return null
-  const existing = await registration.pushManager.getSubscription()
+  const ready = await navigator.serviceWorker.ready
+  const existing = await ready.pushManager.getSubscription()
   if (existing) return existing
-  return registration.pushManager.subscribe({
+  return ready.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource,
   })
@@ -75,5 +112,7 @@ export async function subscribeToPush(publicKey: string): Promise<PushSubscripti
 export async function getPushSubscription(): Promise<PushSubscription | null> {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null
   const registration = await registerServiceWorker()
-  return registration?.pushManager.getSubscription() ?? null
+  if (!registration) return null
+  const ready = await navigator.serviceWorker.ready
+  return ready.pushManager.getSubscription()
 }
