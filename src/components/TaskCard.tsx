@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion'
 import { Task, TaskSession } from '../types'
 import { formatHoursMinutes, minutesToLabel, weekdayLabel } from '../lib/time'
+import TaskDailyNoteEditor from './TaskDailyNoteEditor'
+import TaskProgressPanel from './TaskProgressPanel'
 
 const STATUS_LABEL: Record<Task['status'], string> = {
   upcoming: 'Starts soon',
@@ -68,6 +70,7 @@ export default function TaskCard({
   const progressPercent = targetSeconds > 0
     ? Math.min(100, Math.floor((secondsToday / targetSeconds) * 100))
     : 0
+  const targetReached = targetSeconds > 0 && secondsToday >= targetSeconds
 
   return (
     <motion.div
@@ -103,32 +106,40 @@ export default function TaskCard({
               <span className="ml-2 font-semibold text-flow">{progressPercent}%</span>
             </span>
             <div className="flex items-center gap-2">
-              {!isThisTaskActive && (
-                <button
-                  disabled={busy}
-                  onClick={() => onStart(task.id)}
-                  className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow transition-colors hover:bg-flow hover:text-ink disabled:opacity-50"
-                >
-                  {someOtherTaskRunning ? 'Switch to task' : 'Start'}
-                </button>
-              )}
-              {isRunning && (
-                <button
-                  disabled={busy}
-                  onClick={onPause}
-                  className="rounded-md border border-ink-border px-3 py-1.5 text-sm text-paper hover:border-flow disabled:opacity-50"
-                >
-                  Pause
-                </button>
-              )}
-              {isPaused && (
-                <button
-                  disabled={busy}
-                  onClick={onResume}
-                  className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow hover:bg-flow hover:text-ink disabled:opacity-50"
-                >
-                  Resume
-                </button>
+              {targetReached ? (
+                <span className="rounded-md border border-flow/40 px-3 py-1.5 text-sm text-flow">
+                  Daily goal complete ✓
+                </span>
+              ) : (
+                <>
+                  {!isThisTaskActive && (
+                    <button
+                      disabled={busy}
+                      onClick={() => onStart(task.id)}
+                      className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow transition-colors hover:bg-flow hover:text-ink disabled:opacity-50"
+                    >
+                      {someOtherTaskRunning ? 'Switch to task' : 'Start'}
+                    </button>
+                  )}
+                  {isRunning && (
+                    <button
+                      disabled={busy}
+                      onClick={onPause}
+                      className="rounded-md border border-ink-border px-3 py-1.5 text-sm text-paper hover:border-flow disabled:opacity-50"
+                    >
+                      Pause
+                    </button>
+                  )}
+                  {isPaused && (
+                    <button
+                      disabled={busy}
+                      onClick={onResume}
+                      className="rounded-md border border-flow px-3 py-1.5 text-sm text-flow hover:bg-flow hover:text-ink disabled:opacity-50"
+                    >
+                      Resume
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -144,6 +155,16 @@ export default function TaskCard({
           </div>
         </div>
       )}
+
+      {showTimerControls && task.status === 'ongoing' && (
+        <TaskDailyNoteEditor
+          taskId={task.id}
+          taskStartDate={task.start_date}
+          taskEndDate={task.end_date}
+        />
+      )}
+
+      <TaskProgressPanel taskId={task.id} />
 
       {(onTogglePublic || onEdit || onDelete) && (
         <div className="flex gap-3 border-t border-ink-border pt-2 text-xs">
