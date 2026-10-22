@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import InlineNotice from './InlineNotice'
 import { formatHoursMinutes } from '../lib/time'
 import { getTaskProgress, TaskProgress } from '../lib/taskProgressApi'
 import { friendlyError } from '../lib/errorMessages'
@@ -45,7 +46,7 @@ export default function TaskProgressPanel({ taskId }: { taskId: string }) {
       {open && (
         <div className="mt-3 flex flex-col gap-3">
           {loading && <p className="text-sm text-mute">Loading task history…</p>}
-          {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+          {error && <InlineNotice>{error}</InlineNotice>}
           {data && (
             <>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
