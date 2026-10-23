@@ -119,6 +119,7 @@ export interface PublicProfile {
   social_handles: PublicSocialHandle[]
   total_progress_seconds: number | null
   tasks: PublicTask[]
+  is_private?: boolean
 }
 
 export interface SearchResult {

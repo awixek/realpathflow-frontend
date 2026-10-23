@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import InlineNotice from '../components/InlineNotice'
 import { AnimatePresence } from 'framer-motion'
 import { ProfileSkeleton } from '../components/LoadingState'
 import NavBar from '../components/NavBar'
@@ -145,9 +146,7 @@ export default function ProfilePage() {
         </section>
 
         {error && (
-          <p role="alert" className="text-sm text-red-400">
-            {error}
-          </p>
+          <InlineNotice>{error}</InlineNotice>
         )}
 
         <Section

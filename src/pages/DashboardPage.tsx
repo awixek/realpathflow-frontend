@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import InlineNotice from '../components/InlineNotice'
 import { AnimatePresence, motion } from 'framer-motion'
 import AddTaskModal from '../components/AddTaskModal'
 import DayProgressBox from '../components/DayProgressBox'
@@ -198,9 +199,7 @@ export default function DashboardPage() {
         </section>
 
         {(error || session.error) && (
-          <p role="alert" className="text-sm text-red-400">
-            {error || session.error}
-          </p>
+          <InlineNotice>{error || session.error}</InlineNotice>
         )}
 
         <section className="flex flex-col gap-3">

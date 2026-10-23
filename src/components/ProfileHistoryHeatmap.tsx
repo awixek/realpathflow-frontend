@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import InlineNotice from './InlineNotice'
 import { getProfileHistory } from '../lib/profileApi'
 import { formatHoursMinutes } from '../lib/time'
 import { friendlyError } from '../lib/errorMessages'
@@ -219,7 +220,7 @@ export default function ProfileHistoryHeatmap() {
             </header>
             <div className="overflow-y-auto p-5">
               {dayLoading && <p className="py-8 text-center text-sm text-mute">Loading this day’s tasks and notes…</p>}
-              {dayError && <p role="alert" className="py-6 text-sm text-red-400">{dayError}</p>}
+              {dayError && <div className="py-6"><InlineNotice>{dayError}</InlineNotice></div>}
               {dayDetails && dayDetails.tasks.length === 0 && (
                 <p className="rounded-lg border border-dashed border-ink-border p-6 text-center text-sm text-mute">No tasks or notes were recorded for this date.</p>
               )}

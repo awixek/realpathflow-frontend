@@ -84,6 +84,13 @@ export default function PublicProfilePage() {
           </div>
         </header>
 
+        {profile.is_private && (
+          <section className="rounded-lg border border-ink-border p-6 text-center">
+            <p className="font-display text-lg text-paper">This profile is private</p>
+            <p className="mt-1 text-sm text-mute">@{profile.username} hasn’t made any details public yet.</p>
+          </section>
+        )}
+
         {profile.social_handles.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {profile.social_handles.map((handle, i) => (
